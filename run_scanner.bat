@@ -1,24 +1,16 @@
 @echo off
 chcp 65001 >nul
-title Business Card Scanner Services
+title Business Card Scanner Launcher
 
-echo [1/5] Starting Ollama Service...
-start "Ollama" cmd /c "ollama serve"
+echo Starting all services in one Windows Terminal window (6 tabs)...
 
-echo [2/5] Starting Open WebUI...
-start "Open WebUI" cmd /c "open-webui serve"
-
-echo [3/5] Starting DMR CORS Proxy (Port 12435)...
-start "DMR Proxy" cmd /c "python dmr_proxy.py"
-
-echo [4/5] Starting OpenCV Backend (Port 5050)...
-start "OpenCV Backend" cmd /c "python opencv_backend.py"
-
-echo [5/6] Starting VCF Checker Backend (Port 5051)...
-start "VCF Checker" cmd /c "python vcf_checker.py"
-
-echo [6/6] Starting HTTP Server (Port 8000)...
-start "HTTP Server" cmd /c "python -m http.server 8000"
+wt -w scanner ^
+ new-tab --title "Ollama"       -d "%~dp0." cmd /k ollama serve ; ^
+ new-tab --title "Open WebUI"   -d "%~dp0." cmd /k open-webui serve ; ^
+ new-tab --title "DMR Proxy"    -d "%~dp0." cmd /k python dmr_proxy.py ; ^
+ new-tab --title "OpenCV 5050"  -d "%~dp0." cmd /k python opencv_backend.py ; ^
+ new-tab --title "VCF 5051"     -d "%~dp0." cmd /k python vcf_checker.py ; ^
+ new-tab --title "HTTP 8000"    -d "%~dp0." cmd /k python -m http.server 8000
 
 echo.
 echo All services started!
@@ -28,5 +20,5 @@ echo - Scanner:     http://localhost:8000/scanner.html
 echo - VCF Checker: http://localhost:8000/vcf-checker.html
 echo - Open WebUI:  http://localhost:8080 (Default Port)
 echo.
-echo To stop the services, close the newly opened command windows.
+echo To stop the services, close the Windows Terminal window (all tabs).
 pause
