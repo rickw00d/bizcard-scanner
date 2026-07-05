@@ -5,7 +5,11 @@
       "Bash(find \"/c/Users/rickwu/Documents/My Code\" -maxdepth 3 \\\\\\( -iname \"CLAUDE*.md\" -o -iname \"AGENTS.md\" -o -iname \"MEMORY.md\" \\\\\\) 2>/dev/null; echo \"---done---\")",
       "Read(//c/ProgramData/**)",
       "Read(//c/Users/rickwu/AppData/Roaming/Claude/**)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "PowerShell($line = \\(Select-String -Path app.js -Pattern 'vcfString ='\\).Line; echo \\(\"has ASCII text uFEFF: \" + $line.Contains\\('uFEFF'\\)\\); $idx = $line.IndexOf\\([char]0xFEFF\\); echo \\(\"raw BOM char at index: \" + $idx\\))",
+      "PowerShell($c = Get-Content app.js -Raw; $bom = [string][char]0xFEFF; $esc = [string][char]92 + 'uFEFF'; $old = \"const vcfString = '$bom' + lines.join\"; $new = \"const vcfString = '$esc' + lines.join\"; if \\($c.Contains\\($old\\)\\) { $c = $c.Replace\\($old, $new\\); [IO.File]::WriteAllText\\(\"$PWD\\\\app.js\", $c\\); echo REPLACED } else { echo NOTFOUND }; node --check app.js && echo OK-4)",
+      "PowerShell($line = \\(Select-String -Path app.js -Pattern 'vcfString ='\\).Line.Trim\\(\\); echo $line; echo \\(\"has ASCII text uFEFF: \" + $line.Contains\\('uFEFF'\\)\\); echo \\(\"raw BOM present: \" + \\($line.IndexOf\\([char]0xFEFF\\) -ge 0\\)\\))",
+      "PowerShell(node -e \"const fs=require\\('fs'\\);const src=fs.readFileSync\\('app.js','utf8'\\);const i=src.indexOf\\('function escapeVCard'\\);const j=src.indexOf\\('// ��',i\\);const code=src.slice\\(i,j\\);eval\\(code\\);const folded=vProp\\('NOTE;CHARSET=UTF-8','�νs: 12345678'+String.fromCharCode\\(10\\)+'�x�_��,�H�q��;����'\\);console.log\\(JSON.stringify\\(folded\\)\\);const long=vProp\\('FN;CHARSET=UTF-8','���p��'.repeat\\(20\\)\\);for\\(const l of long.split\\(String.fromCharCode\\(13,10\\)\\)\\){const b=Buffer.byteLength\\(l,'utf8'\\);if\\(b>75\\)throw new Error\\('line over 75 bytes: '+b\\);}console.log\\('fold OK, max line bytes <= 75'\\)\")"
     ]
   }
 }

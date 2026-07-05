@@ -2295,21 +2295,24 @@ function parseContactData(rawText) {
 // ═══════════════════════════════════════════════════════
 //  Photo Resizing
 // ═══════════════════════════════════════════════════════
-function resizeImageToJpeg(dataUrl, maxSize = 800) {
-    return new Promise((resolve) => {
+// ─── 等比例縮圖（只縮不放、保留長寬比） ───
+function resizeCardImage(dataUrl, maxDim = 640, quality = 0.8) {
+    return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
-            // 保留長寬比、只縮不放（避免把名片左右裁掉）
-            const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-            const w = Math.round(img.width * scale);
-            const h = Math.round(img.height * scale);
+            let w = img.width, h = img.height;
+            if (Math.max(w, h) > maxDim) {
+                const s = maxDim / Math.max(w, h);
+                w = Math.round(w * s);
+                h = Math.round(h * s);
+            }
             const canvas = document.createElement('canvas');
             canvas.width = w;
             canvas.height = h;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, w, h);
-            resolve(canvas.toDataURL('image/jpeg', 0.9));
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', quality));
         };
+        img.onerror = () => reject(new Error('影像載入失敗'));
         img.src = dataUrl;
     });
 }
@@ -2318,24 +2321,43 @@ function resizeImageToJpeg(dataUrl, maxSize = 800) {
 // ═══════════════════════════════════════════════════════
 //  vCard Line Folding
 // ═══════════════════════════════════════════════════════
+// ─── RFC 規範的值跳脫：反斜線、換行、分號、逗號 ───
+function escapeVCard(value) {
+    if (!value) return '';
+    return String(value)
+        .replace(/\\/g, '\\\\')
+        .replace(/\r\n|\r|\n/g, '\\n')
+        .replace(/;/g, '\\;')
+        .replace(/,/g, '\\,');
+}
+
+// ─── 折行：每實體行 ≤ 75 位元組（UTF-8），續行以單一空格開頭 ───
+//     以 for...of 逐「完整字元」迭代，避免把中文字/代理對從中切斷
 function foldLine(line) {
-    const maxLen = 75;
-    if (line.length <= maxLen) return line;
+    const encoder = new TextEncoder();
+    if (encoder.encode(line).length <= 75) return line;
 
     let result = '';
-    let currentLine = '';
-    const safeLen = 72;
-
-    for (let i = 0; i < line.length; i++) {
-        currentLine += line[i];
-        const byteLen = new TextEncoder().encode(currentLine).length;
-        if (byteLen >= safeLen && i < line.length - 1) {
-            result += currentLine + '\r\n ';
-            currentLine = '';
+    let current = '';
+    for (const ch of line) {
+        if (encoder.encode(current + ch).length > 74) {
+            result += current + '\r\n ';
+            current = ch;
+        } else {
+            current += ch;
         }
     }
-    result += currentLine;
-    return result;
+    return result + current;
+}
+
+// ─── 產生單一屬性行（自動跳脫 + 折行） ───
+function vProp(nameAndParams, value) {
+    return foldLine(`${nameAndParams}:${escapeVCard(value)}`);
+}
+
+// ─── ADR 需逐一跳脫各組成欄位後再以「;」串接 ───
+function vAdr(params, components) {
+    return foldLine(`ADR;${params}:` + components.map(escapeVCard).join(';'));
 }
 
 
@@ -2371,7 +2393,7 @@ async function exportVCF() {
     const fullName = fullNameCn || fullNameEn || familyName + givenName;
 
     if (!fullName && !mobile && !workPhone && !email) {
-        alert("Please provide at least a name, phone, or email to export.");
+        alert('請至少填寫姓名、電話或 Email 其中一項再匯出。');
         return;
     }
 
@@ -2379,106 +2401,87 @@ async function exportVCF() {
     lines.push('BEGIN:VCARD');
     lines.push('VERSION:3.0');
 
-    // N: FamilyName;GivenName;MiddleName;Prefix;Suffix
-    lines.push(foldLine(`N;CHARSET=UTF-8:${familyName};${givenName};;;`));
+    // N：姓;名;中間名;稱謂;後綴 — 各組成欄位分別跳脫
+    lines.push(foldLine(
+        `N;CHARSET=UTF-8:${escapeVCard(familyName)};${escapeVCard(givenName)};;;`
+    ));
 
     // FN: Full formatted name — combine both CN and EN if available
     let displayName = fullNameCn;
     if (fullNameEn) {
         displayName = displayName ? `${displayName} (${fullNameEn})` : fullNameEn;
     }
-    lines.push(foldLine(`FN;CHARSET=UTF-8:${displayName}`));
+    lines.push(vProp('FN;CHARSET=UTF-8', displayName));
 
-    // ORG
+    // ORG：公司;部門
     if (company || department) {
-        const orgParts = [company, department].filter(Boolean).join(';');
-        lines.push(foldLine(`ORG;CHARSET=UTF-8:${orgParts}`));
+        lines.push(foldLine(
+            'ORG;CHARSET=UTF-8:' +
+            [company, department].filter(Boolean).map(escapeVCard).join(';')
+        ));
     }
 
-    // TITLE
-    if (titleVal) {
-        lines.push(foldLine(`TITLE;CHARSET=UTF-8:${titleVal}`));
-    }
-
-    // TEL - Mobile
-    if (mobile) {
-        lines.push(foldLine(`TEL;TYPE=CELL,VOICE:${mobile}`));
-    }
-
-    // TEL - Work
+    if (titleVal) lines.push(vProp('TITLE;CHARSET=UTF-8', titleVal));
+    if (mobile) lines.push(vProp('TEL;TYPE=CELL,VOICE', mobile));
     if (workPhone) {
-        const fullWorkPhone = ext ? `${workPhone} ext ${ext}` : workPhone;
-        lines.push(foldLine(`TEL;TYPE=WORK,VOICE:${fullWorkPhone}`));
+        // Outlook 可辨識「號碼 x分機」的寫法
+        const fullWorkPhone = ext ? `${workPhone} x${ext}` : workPhone;
+        lines.push(vProp('TEL;TYPE=WORK,VOICE', fullWorkPhone));
     }
+    if (email) lines.push(vProp('EMAIL;TYPE=INTERNET,WORK', email));
+    if (website) lines.push(vProp('URL;TYPE=WORK', website));
 
-    // EMAIL
-    if (email) {
-        lines.push(foldLine(`EMAIL;TYPE=INTERNET,WORK:${email}`));
-    }
-
-    // URL
-    if (website) {
-        lines.push(foldLine(`URL;TYPE=WORK:${website}`));
-    }
-
-    // LOGO - The cropped business card image
-    if (window.cardLogoBase64) {
-        lines.push(foldLine(`LOGO;TYPE=JPEG;ENCODING=b:${window.cardLogoBase64}`));
-        // Duplicate to PHOTO for compatibility
-        lines.push(foldLine(`PHOTO;TYPE=JPEG;ENCODING=b:${window.cardLogoBase64}`));
-    }
-
-    // ADR - Chinese address: ;;Street;City;State;ZIP;Country
+    // ADR：;;街道;市;州;郵遞區號;國家
     if (addrCn) {
-        lines.push(foldLine(`ADR;TYPE=WORK;CHARSET=UTF-8:;;${addrCn};;;${zipShared};`));
+        lines.push(vAdr('TYPE=WORK;CHARSET=UTF-8', ['', '', addrCn, '', '', zipShared, '']));
     }
-
-    // ADR - English address
     if (addrEn) {
-        lines.push(foldLine(`ADR;TYPE=WORK;CHARSET=UTF-8:;;${addrEn};;;${zipShared};`));
+        lines.push(vAdr('TYPE=WORK;CHARSET=UTF-8', ['', '', addrEn, '', '', zipShared, '']));
     }
 
-    // NOTE
+    // NOTE：統編 + 備註（escapeVCard 會把換行轉為合法的 \n）
     let noteContent = note;
     if (taxIdVal) {
         noteContent = noteContent ? `統編: ${taxIdVal}\n${noteContent}` : `統編: ${taxIdVal}`;
     }
-    if (noteContent) {
-        lines.push(foldLine(`NOTE;CHARSET=UTF-8:${noteContent}`));
-    }
+    if (noteContent) lines.push(vProp('NOTE;CHARSET=UTF-8', noteContent));
 
-    // CATEGORIES
-    if (categories) {
-        lines.push(foldLine(`CATEGORIES;CHARSET=UTF-8:${categories}`));
-    }
+    if (categories) lines.push(vProp('CATEGORIES;CHARSET=UTF-8', categories));
 
-    // PHOTO - Front
-    if (previewImage.src && previewImage.src.startsWith('data:image/')) {
+    // ─── 影像：只嵌入「一張」聯絡人相片，優先使用透視校正後的名片圖 ───
+    let photoB64 = null;
+    if (window.cardLogoBase64) {
+        photoB64 = window.cardLogoBase64;               // 後端已壓到 <100KB
+    } else if (previewImage.src && previewImage.src.startsWith('data:image/')) {
         try {
-            const resized = await resizeImageToJpeg(previewImage.src, 800);
-            const base64Data = resized.split(',')[1];
-            lines.push(foldLine(`PHOTO;ENCODING=b;TYPE=JPEG:${base64Data}`));
+            const resized = await resizeCardImage(previewImage.src, 640, 0.8);
+            photoB64 = resized.split(',')[1];
         } catch (e) {
-            console.warn('Could not resize front photo:', e);
+            console.warn('無法縮放正面影像:', e);
         }
     }
+    if (photoB64) {
+        lines.push(foldLine(`PHOTO;ENCODING=b;TYPE=JPEG:${photoB64}`));
+    }
 
-    // PHOTO - Back
+    // 背面照：以 item 群組附加（Apple/Google 可讀，Outlook 會安全忽略）
     if (backPhotoDataUrl) {
         try {
-            const resized = await resizeImageToJpeg(backPhotoDataUrl, 800);
-            const base64Data = resized.split(',')[1];
-            lines.push(foldLine(`PHOTO;ENCODING=b;TYPE=JPEG;X-ABLABEL=Back:${base64Data}`));
+            const resizedBack = await resizeCardImage(backPhotoDataUrl, 640, 0.8);
+            const backB64 = resizedBack.split(',')[1];
+            lines.push(foldLine(`item1.PHOTO;ENCODING=b;TYPE=JPEG:${backB64}`));
+            lines.push('item1.X-ABLABEL:名片背面');
         } catch (e) {
-            console.warn('Could not resize back photo:', e);
+            console.warn('無法縮放背面影像:', e);
         }
     }
 
     lines.push('END:VCARD');
 
-    const vcfString = lines.join('\r\n');
+    // ★ 關鍵：加上 UTF-8 BOM，傳統版 Outlook 才會以 UTF-8 解碼（否則用
+    //   系統 ANSI 字碼頁 CP950 解讀 → 中文亂碼）。結尾補一組 CRLF。
+    const vcfString = '\uFEFF' + lines.join('\r\n') + '\r\n';
 
-    // No BOM for Outlook compatibility
     const blob = new Blob([vcfString], { type: 'text/vcard;charset=utf-8' });
     const url = URL.createObjectURL(blob);
 
