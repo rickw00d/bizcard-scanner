@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la ~/.claude/ | head -40; echo \"===projects tree===\"; find ~/.claude/projects -maxdepth 3 -name \"*.md\" -o -maxdepth 3 -type d | head -30)",
+      "Bash(find \"/c/Users/rickwu/Documents/My Code\" -maxdepth 3 \\\\\\( -iname \"CLAUDE*.md\" -o -iname \"AGENTS.md\" -o -iname \"MEMORY.md\" \\\\\\) 2>/dev/null; echo \"---done---\")",
+      "Read(//c/ProgramData/**)",
+      "Read(//c/Users/rickwu/AppData/Roaming/Claude/**)",
+      "Bash(python -c ' *)"
+    ]
+  }
+}

@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>名片 VCF 檢查 / 審查</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#181b22; --panel2:#1f232c; --line:#2a2f3a;
+    --txt:#e6e9ef; --muted:#9aa3b2; --accent:#4f8cff; --accent2:#2f6bd8;
+    --ok:#2ecc71; --warn:#f1c40f; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Microsoft JhengHei","PingFang TC",system-ui,sans-serif;
+       background:var(--bg);color:var(--txt);font-size:14px}
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:12px 16px;
+         display:flex;flex-wrap:wrap;gap:10px;align-items:center;position:sticky;top:0;z-index:10}
+  header h1{font-size:16px;margin:0 12px 0 0;white-space:nowrap}
+  .field{display:flex;align-items:center;gap:6px}
+  .field label{color:var(--muted);white-space:nowrap}
+  input[type=text]{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+       border-radius:6px;padding:7px 9px;min-width:240px}
+  button{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:8px 14px;
+       cursor:pointer;font-size:14px}
+  button:hover{background:var(--accent2)}
+  button.ghost{background:var(--panel2);border:1px solid var(--line);color:var(--txt)}
+  button.ok{background:var(--ok)}
+  button.ghost:hover{border-color:var(--accent)}
+  #dot{width:10px;height:10px;border-radius:50%;background:var(--muted);display:inline-block}
+  .wrap{display:flex;height:calc(100vh - 58px)}
+  .side{width:300px;border-right:1px solid var(--line);overflow:auto;background:var(--panel)}
+  .side .sum{padding:10px 14px;color:var(--muted);border-bottom:1px solid var(--line);font-size:13px}
+  .item{padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;
+        justify-content:space-between;gap:8px;align-items:center}
+  .item:hover{background:var(--panel2)}
+  .item.active{background:var(--panel2);border-left:3px solid var(--accent)}
+  .item .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .badge{font-size:11px;padding:2px 7px;border-radius:10px;white-space:nowrap}
+  .b-wait{background:#33384a;color:var(--muted)}
+  .b-pass{background:rgba(46,204,113,.18);color:var(--ok)}
+  .b-review{background:rgba(241,196,15,.18);color:var(--warn)}
+  .b-moved{background:rgba(79,140,255,.18);color:var(--accent)}
+  .main{flex:1;overflow:auto;padding:18px 22px}
+  .empty{color:var(--muted);text-align:center;margin-top:80px}
+  .top{display:flex;gap:18px;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap}
+  .pcol{display:flex;flex-direction:column;gap:6px}
+  .plabel{color:var(--muted);font-size:12px}
+  .photo{max-width:300px;max-height:200px;border:1px solid var(--line);border-radius:8px;background:#000}
+  .cropchk{font-size:12px;color:var(--txt);display:flex;gap:6px;align-items:center;cursor:pointer}
+  .meta{color:var(--muted);font-size:13px;line-height:1.8}
+  table{width:100%;border-collapse:collapse;margin-top:8px}
+  th,td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+  th{color:var(--muted);font-weight:600;font-size:12px;background:var(--panel)}
+  .flabel{color:var(--muted);white-space:nowrap;width:78px}
+  .cell{border:2px solid transparent;border-radius:6px;padding:7px 9px;cursor:pointer;
+        background:var(--panel2);min-height:36px;word-break:break-all}
+  .cell.empty{color:#5b6271;font-style:italic;cursor:default}
+  .cell.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .colw{width:38%}
+  .sc{font-variant-numeric:tabular-nums}
+  .row-diff td{background:rgba(241,196,15,.06)}
+  .st{font-size:11px;padding:2px 7px;border-radius:10px}
+  .st-match{background:rgba(46,204,113,.18);color:var(--ok)}
+  .st-diff{background:rgba(241,196,15,.18);color:var(--warn)}
+  .st-empty{background:#33384a;color:var(--muted)}
+  .final input{width:100%}
+  .actions{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap}
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--panel2);
+        border:1px solid var(--line);padding:10px 18px;border-radius:8px;opacity:0;transition:.3s;z-index:50}
+  .toast.show{opacity:1}
+  details{margin-top:12px}summary{cursor:pointer;color:var(--muted)}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px;
+      white-space:pre-wrap;word-break:break-all;color:var(--muted);max-height:200px;overflow:auto}
+</style>
+</head>
+<body>
+<header>
+  <h1>名片 VCF 檢查</h1>
+  <div class="field"><label>來源</label>
+    <input id="srcDir" type="text" value="C:\Users\rickwu\Documents\My Biz Card"></div>
+  <div class="field"><label>通過搬到</label>
+    <input id="dstDir" type="text" value="C:\Users\rickwu\Documents\My Biz Card\passed"></div>
+  <button id="loadBtn">載入清單</button>
+  <button id="scanAllBtn" class="ghost">自動掃描全部</button>
+  <button id="convertAllBtn" class="ghost">整批轉 Windows 相容</button>
+  <button id="recropAllBtn" class="ghost">整批重新裁切照片</button>
+  <span class="field"><span id="dot"></span><span id="health" class="meta">未連線</span></span>
+</header>
+
+<div class="wrap">
+  <div class="side">
+    <div class="sum" id="summary">尚未載入</div>
+    <div id="list"></div>
+  </div>
+  <div class="main" id="main">
+    <div class="empty">輸入來源資料夾路徑後按「載入清單」<br>點選左側檔案即可開始逐欄比對</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = "http://localhost:5051";
+const $ = s => document.querySelector(s);
+let files = [];            // [{name, status}]
+let current = null;        // 目前 inspect 結果
+let choice = {};           // {field_key: 'vcf'|'ocr'|'edit'}
+let finalVal = {};         // {field_key: 最終值}
+let useCrop = false;       // 是否採用裁切後照片
+
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),2200);}
+
+async function api(path, body){
+  const r = await fetch(API+path,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body||{})});
+  const data = await r.json();
+  if(!r.ok) throw new Error(data.error||("HTTP "+r.status));
+  return data;
+}
+
+async function checkHealth(){
+  const dot=$("#dot"), txt=$("#health");
+  try{
+    const r = await fetch(API+"/api/vcf/health"); const d = await r.json();
+    txt.title = d.ocr_error || "";
+    if(!d.ocr_backend){
+      dot.style.background="var(--bad)";
+      txt.textContent="5050 後端離線（裁切/OCR 皆不可用）";
+    }else if(d.ocr_ready){
+      dot.style.background="var(--ok)";
+      txt.textContent="OCR 就緒 ✓（裁切 ✓）";
+    }else{
+      dot.style.background="var(--warn)";
+      txt.textContent="裁切可用，OCR 未就緒 ✗（滑鼠移上看錯誤）";
+    }
+  }catch(e){ dot.style.background="var(--bad)"; txt.title=""; txt.textContent="vcf_checker(5051) 未啟動"; }
+}
+
+function renderList(){
+  const el=$("#list"); el.innerHTML="";
+  files.forEach((f,i)=>{
+    const div=document.createElement("div");
+    div.className="item"+(current&&current.file===f.name?" active":"");
+    const b={wait:"b-wait",pass:"b-pass",review:"b-review",moved:"b-moved"}[f.status||"wait"];
+    const t={wait:"待檢查",pass:"通過",review:"需審查",moved:"已搬移"}[f.status||"wait"];
+    div.innerHTML=`<span class="nm">${f.name}</span><span class="badge ${b}">${t}</span>`;
+    div.onclick=()=>inspect(f.name);
+    el.appendChild(div);
+  });
+}
+
+function updateSummary(){
+  const c={wait:0,pass:0,review:0,moved:0};
+  files.forEach(f=>c[f.status||"wait"]++);
+  $("#summary").textContent=`共 ${files.length} 檔 · 待檢查 ${c.wait} · 需審查 ${c.review} · 通過 ${c.pass} · 已搬移 ${c.moved}`;
+}
+
+$("#loadBtn").onclick=async()=>{
+  try{
+    const d=await api("/api/vcf/list",{dir:$("#srcDir").value.trim()});
+    files=d.files.map(f=>({name:f.name,status:"wait"}));
+    current=null; $("#main").innerHTML='<div class="empty">點選左側檔案開始比對</div>';
+    renderList(); updateSummary();
+    toast(`載入 ${d.count} 個 vcf`);
+  }catch(e){ toast("載入失敗："+e.message); }
+};
+
+async function inspect(name){
+  $("#main").innerHTML='<div class="empty">辨識中…（首次載入 OCR 較慢）</div>';
+  try{
+    current=await api("/api/vcf/inspect",{dir:$("#srcDir").value.trim(),file:name});
+  }catch(e){ $("#main").innerHTML='<div class="empty">辨識失敗：'+e.message+'</div>'; return; }
+  const f=files.find(x=>x.name===name);
+  if(f && f.status!=="moved") f.status = current.overall==="pass"?"pass":"review";
+  useCrop = !!current.crop_applied;   // 有裁切到就預設採用
+  // 預設選擇：一致取 vcf；不一致也先放 vcf，由使用者改
+  choice={}; finalVal={};
+  current.fields.forEach(fd=>{
+    const useVcf = fd.vcf!=="" || fd.ocr==="";
+    choice[fd.key]= useVcf ? "vcf":"ocr";
+    finalVal[fd.key]= useVcf ? fd.vcf : fd.ocr;
+  });
+  renderMain(); renderList(); updateSummary();
+}
+
+function renderMain(){
+  const c=current;
+  let rows = c.fields.map(fd=>{
+    const stCls={match:"st-match",diff:"st-diff",empty:"st-empty"}[fd.status];
+    const stTxt={match:"一致",diff:"不一致",empty:"無"}[fd.status];
+    const vcfEmpty = fd.vcf==="";
+    const ocrEmpty = fd.ocr==="";
+    return `<tr class="${fd.status==='diff'?'row-diff':''}" data-k="${fd.key}">
+      <td class="flabel">${fd.label}</td>
+      <td class="colw">
+        <div class="cell ${vcfEmpty?'empty':''} ${choice[fd.key]==='vcf'?'sel':''}"
+             data-side="vcf">${vcfEmpty?'（空）':escapeHtml(fd.vcf)}</div></td>
+      <td class="colw">
+        <div class="cell ${ocrEmpty?'empty':''} ${choice[fd.key]==='ocr'?'sel':''}"
+             data-side="ocr">${ocrEmpty?'（無辨識）':escapeHtml(fd.ocr)}</div></td>
+      <td><span class="st ${stCls}">${stTxt}</span><br><span class="sc meta">${fd.score}</span></td>
+      <td class="final"><input type="text" value="${escapeAttr(finalVal[fd.key])}"></td>
+    </tr>`;
+  }).join("");
+
+  const cropBlock = c.photo_cropped
+    ? `<div class="pcol">
+         <div class="plabel">自動裁切後</div>
+         <img class="photo" src="${c.photo_cropped}">
+         <label class="cropchk"><input type="checkbox" id="useCropChk" ${useCrop?'checked':''}> 採用裁切後照片（寫回 vcf）</label>
+       </div>`
+    : `<div class="pcol"><div class="plabel">自動裁切</div>
+         <div class="meta" style="padding:18px 0">未偵測到名片邊框，<br>維持原圖</div></div>`;
+
+  $("#main").innerHTML=`
+    <div class="top">
+      <div class="pcol">
+        <div class="plabel">原始嵌入照片</div>
+        ${c.photo?`<img class="photo" src="${c.photo}">`:'<div class="meta">（無嵌入照片）</div>'}
+      </div>
+      ${c.photo?cropBlock:''}
+      <div class="meta">
+        檔名：${c.file}<br>
+        嵌入照片：${c.photo_count} 張<br>
+        差異欄位：${c.diff_count}<br>
+        判定：${c.overall==='pass'?'<span style="color:var(--ok)">可直接通過</span>':'<span style="color:var(--warn)">建議審查</span>'}
+        ${c.ocr_error?'<br><span style="color:var(--bad)">'+escapeHtml(c.ocr_error)+'</span>':''}
+        ${c.photo_cropped?'<br><span style="color:var(--ok)">已自動裁切，OCR 採用裁切後影像</span>':''}
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>欄位</th><th>VCF 原內容</th><th>照片重新辨識</th><th>相似度</th><th>採用值（可修改）</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="actions">
+      <button class="ghost" onclick="bulk('vcf')">全部採用 VCF</button>
+      <button class="ghost" onclick="bulk('ocr')">全部採用辨識</button>
+      <button class="ok" id="approveBtn">通過並搬移 →</button>
+      <button class="ghost" id="skipBtn">略過</button>
+    </div>
+    <details><summary>檢視 OCR 原始文字</summary><pre>${escapeHtml(c.ocr_text||'（無）')}</pre></details>
+  `;
+
+  // 綁定：點選 cell 選邊
+  $("#main").querySelectorAll(".cell").forEach(cell=>{
+    if(cell.classList.contains("empty")) return;
+    cell.onclick=()=>{
+      const tr=cell.closest("tr"); const k=tr.dataset.k; const side=cell.dataset.side;
+      choice[k]=side;
+      const fd=current.fields.find(x=>x.key===k);
+      finalVal[k]= side==="vcf"?fd.vcf:fd.ocr;
+      tr.querySelector(".final input").value=finalVal[k];
+      tr.querySelectorAll(".cell").forEach(x=>x.classList.remove("sel"));
+      cell.classList.add("sel");
+    };
+  });
+  // 綁定：手動編輯採用值
+  $("#main").querySelectorAll(".final input").forEach(inp=>{
+    const k=inp.closest("tr").dataset.k;
+    inp.oninput=()=>{finalVal[k]=inp.value; choice[k]="edit";};
+  });
+  const cc=$("#useCropChk"); if(cc){ cc.onchange=()=>{ useCrop=cc.checked; }; }
+  $("#approveBtn").onclick=approve;
+  $("#skipBtn").onclick=()=>{ toast("已略過"); };
+}
+
+function bulk(side){
+  current.fields.forEach(fd=>{
+    const v= side==="vcf"?fd.vcf:fd.ocr;
+    choice[fd.key]=side; finalVal[fd.key]=v;
+  });
+  renderMain();
+}
+
+async function approve(){
+  try{
+    const r=await api("/api/vcf/approve",{
+      dir:$("#srcDir").value.trim(), dest:$("#dstDir").value.trim(),
+      file:current.file, values:finalVal,
+      use_crop: useCrop && !!current.crop_b64,
+      crop_b64: current.crop_b64 || "",
+      best_index: current.best_index });
+    const f=files.find(x=>x.name===current.file);
+    if(f) f.status="moved";
+    toast("已搬移 → "+(r.dest||$("#dstDir").value));
+    renderList(); updateSummary();
+    // 自動跳到下一個待檢查
+    const next=files.find(x=>x.status==="wait"||x.status==="review");
+    if(next) inspect(next.name);
+    else $("#main").innerHTML='<div class="empty">全部處理完成 🎉</div>';
+  }catch(e){ toast("搬移失敗："+e.message); }
+}
+
+async function scanAll(){
+  if(!files.length){ toast("請先載入清單"); return; }
+  for(const f of files){
+    if(f.status==="moved") continue;
+    try{
+      const d=await api("/api/vcf/inspect",{dir:$("#srcDir").value.trim(),file:f.name});
+      f.status = d.overall==="pass"?"pass":"review";
+      renderList(); updateSummary();
+    }catch(e){ f.status="review"; }
+  }
+  toast("掃描完成");
+}
+$("#scanAllBtn").onclick=scanAll;
+
+async function convertAll(){
+  const src=$("#srcDir").value.trim();
+  if(!src){ toast("請先填來源資料夾"); return; }
+  const out = src.replace(/[\\/]+$/,"") + "\\win_compat";
+  if(!confirm(`將「${src}」內所有 vcf 轉成 Windows 聯絡人相容格式\n（vCard 2.1 + Quoted-Printable，中文不再亂碼）\n\n輸出到：${out}\n（不會更動原檔）\n\n確定執行？`)) return;
+  const btn=$("#convertAllBtn"); const old=btn.textContent;
+  btn.disabled=true; btn.textContent="轉檔中…";
+  try{
+    const r=await api("/api/vcf/convert_all",{dir:src, out:out});
+    toast(`轉檔完成：成功 ${r.ok} / 共 ${r.total}${r.fail?`，失敗 ${r.fail}`:""}`);
+    if(r.fail && r.errors && r.errors.length) console.warn("轉檔失敗清單:", r.errors);
+    alert(`完成！\n成功 ${r.ok} 個、失敗 ${r.fail} 個\n\n輸出資料夾：\n${r.out}\n\n請用 Windows 聯絡人匯入此資料夾的檔案測試。`);
+  }catch(e){ toast("轉檔失敗："+e.message); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+$("#convertAllBtn").onclick=convertAll;
+
+async function recropAll(){
+  const src=$("#srcDir").value.trim();
+  if(!src){ toast("請先填來源資料夾"); return; }
+  const out = src.replace(/[\\/]+$/,"") + "\\recropped";
+  if(!confirm(`將「${src}」內所有 vcf 的名片照片重新去背/裁切\n（帶背景的會裁正；已裁好或抓不到邊框的維持原圖）\n\n注意：無法提高原本小圖的解析度。\n輸出到：${out}\n（不會更動原檔）\n\n確定執行？`)) return;
+  const btn=$("#recropAllBtn"); const old=btn.textContent;
+  btn.disabled=true; btn.textContent="裁切中…";
+  try{
+    const r=await api("/api/vcf/recrop_all",{dir:src, out:out});
+    toast(`重新裁切完成：裁正 ${r.cropped} / 共 ${r.total}`);
+    if(r.errors && r.errors.length) console.warn("裁切失敗清單:", r.errors);
+    alert(`完成！\n共 ${r.total} 檔\n裁正 ${r.cropped} 個\n未偵測到邊框(維持原圖) ${r.no_border} 個\n無照片 ${r.no_photo} 個\n失敗 ${r.fail} 個\n\n輸出資料夾：\n${r.out}`);
+  }catch(e){ toast("重新裁切失敗："+e.message); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+$("#recropAllBtn").onclick=recropAll;
+
+function escapeHtml(s){return (s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+function escapeAttr(s){return (s||"").replace(/"/g,"&quot;");}
+
+checkHealth(); setInterval(checkHealth,8000);
+</script>
+</body>
+</html>
