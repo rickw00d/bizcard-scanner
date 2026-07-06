@@ -2321,14 +2321,35 @@ function resizeCardImage(dataUrl, maxDim = 640, quality = 0.8) {
 // ═══════════════════════════════════════════════════════
 //  vCard Line Folding
 // ═══════════════════════════════════════════════════════
-// ─── RFC 規範的值跳脫：反斜線、換行、分號、逗號 ───
-function escapeVCard(value) {
+// ─── vCard 2.1 值跳脫：compound 欄位（N/ORG/ADR）內的反斜線與分號 ───
+function escape21(value) {
     if (!value) return '';
-    return String(value)
-        .replace(/\\/g, '\\\\')
-        .replace(/\r\n|\r|\n/g, '\\n')
-        .replace(/;/g, '\\;')
-        .replace(/,/g, '\\,');
+    return String(value).replace(/\\/g, '\\\\').replace(/;/g, '\\;');
+}
+
+// ─── vCard 2.1 Quoted-Printable：UTF-8 → =XX，過長以 =CRLF 軟斷行 ───
+//     整檔因此為純 ASCII，Windows 聯絡人/Outlook 不會判錯字碼
+//     （規則移植自 vcf_to_win.py 的 qp_encode）
+function qpEncode(s, softWrap = 75) {
+    let out = '';
+    let lineLen = 0;
+    for (const byte of new TextEncoder().encode(s)) {
+        let tok;
+        if (byte === 0x3D) tok = '=3D';                    // '='
+        else if (byte === 0x0D) tok = '=0D';               // CR
+        else if (byte === 0x0A) tok = '=0A';               // LF
+        else if (byte === 0x20) tok = ' ';
+        else if (byte >= 33 && byte <= 126) tok = String.fromCharCode(byte);
+        else tok = '=' + byte.toString(16).toUpperCase().padStart(2, '0');
+        // 軟斷行：不切斷 =XX token
+        if (lineLen + tok.length > softWrap) {
+            out += '=\r\n';
+            lineLen = 0;
+        }
+        out += tok;
+        lineLen += tok.length;
+    }
+    return out;
 }
 
 // ─── 折行：每實體行 ≤ 75 位元組（UTF-8），續行以單一空格開頭 ───
@@ -2350,14 +2371,23 @@ function foldLine(line) {
     return result + current;
 }
 
-// ─── 產生單一屬性行（自動跳脫 + 折行） ───
-function vProp(nameAndParams, value) {
-    return foldLine(`${nameAndParams}:${escapeVCard(value)}`);
+// ─── 產生 2.1 屬性行：純 ASCII 直接輸出（過長折行），含中文改用 QP ───
+function vProp21(nameAndParams, value) {
+    if (/^[\x20-\x7E]*$/.test(value)) {
+        return foldLine(`${nameAndParams}:${value}`);
+    }
+    return `${nameAndParams};CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:${qpEncode(value)}`;
 }
 
-// ─── ADR 需逐一跳脫各組成欄位後再以「;」串接 ───
-function vAdr(params, components) {
-    return foldLine(`ADR;${params}:` + components.map(escapeVCard).join(';'));
+// ─── 照片：vCard 2.1 BASE64 區塊（每行 74 字元、空白開頭、空行結尾） ───
+//     （格式移植自 vcf_to_win.py 的 photo_block）
+function photoBlock21(nameAndParams, b64) {
+    const lines = [`${nameAndParams}:`];
+    for (let i = 0; i < b64.length; i += 74) {
+        lines.push(' ' + b64.slice(i, i + 74));
+    }
+    lines.push('');   // 2.1 規定 BASE64 屬性以空白行結束
+    return lines;
 }
 
 
@@ -2397,58 +2427,56 @@ async function exportVCF() {
         return;
     }
 
+    // vCard 2.1 + Quoted-Printable：repo 內 vcf_to_win.py 驗證過的
+    // Windows 聯絡人/Outlook 相容格式；Google 聯絡人同樣可匯入。
     const lines = [];
     lines.push('BEGIN:VCARD');
-    lines.push('VERSION:3.0');
+    lines.push('VERSION:2.1');
 
-    // N：姓;名;中間名;稱謂;後綴 — 各組成欄位分別跳脫
-    lines.push(foldLine(
-        `N;CHARSET=UTF-8:${escapeVCard(familyName)};${escapeVCard(givenName)};;;`
-    ));
+    // N：姓;名;中間名;稱謂;後綴（compound 欄位個別跳脫分號）
+    lines.push(vProp21('N', `${escape21(familyName)};${escape21(givenName)};;;`));
 
     // FN: Full formatted name — combine both CN and EN if available
     let displayName = fullNameCn;
     if (fullNameEn) {
         displayName = displayName ? `${displayName} (${fullNameEn})` : fullNameEn;
     }
-    lines.push(vProp('FN;CHARSET=UTF-8', displayName));
+    lines.push(vProp21('FN', displayName));
 
     // ORG：公司;部門
     if (company || department) {
-        lines.push(foldLine(
-            'ORG;CHARSET=UTF-8:' +
-            [company, department].filter(Boolean).map(escapeVCard).join(';')
-        ));
+        lines.push(vProp21('ORG',
+            [company, department].filter(Boolean).map(escape21).join(';')));
     }
 
-    if (titleVal) lines.push(vProp('TITLE;CHARSET=UTF-8', titleVal));
-    if (mobile) lines.push(vProp('TEL;TYPE=CELL,VOICE', mobile));
+    if (titleVal) lines.push(vProp21('TITLE', titleVal));
+    if (mobile) lines.push(vProp21('TEL;TYPE=CELL,VOICE', mobile));
     if (workPhone) {
         // Outlook 可辨識「號碼 x分機」的寫法
         const fullWorkPhone = ext ? `${workPhone} x${ext}` : workPhone;
-        lines.push(vProp('TEL;TYPE=WORK,VOICE', fullWorkPhone));
+        lines.push(vProp21('TEL;TYPE=WORK,VOICE', fullWorkPhone));
     }
-    if (email) lines.push(vProp('EMAIL;TYPE=INTERNET,WORK', email));
-    if (website) lines.push(vProp('URL;TYPE=WORK', website));
+    if (email) lines.push(vProp21('EMAIL;TYPE=INTERNET,WORK', email));
+    if (website) lines.push(vProp21('URL;TYPE=WORK', website));
 
     // ADR：;;街道;市;州;郵遞區號;國家
     if (addrCn) {
-        lines.push(vAdr('TYPE=WORK;CHARSET=UTF-8', ['', '', addrCn, '', '', zipShared, '']));
+        lines.push(vProp21('ADR;TYPE=WORK', `;;${escape21(addrCn)};;;${escape21(zipShared)};`));
     }
     if (addrEn) {
-        lines.push(vAdr('TYPE=WORK;CHARSET=UTF-8', ['', '', addrEn, '', '', zipShared, '']));
+        lines.push(vProp21('ADR;TYPE=WORK', `;;${escape21(addrEn)};;;${escape21(zipShared)};`));
     }
 
-    // NOTE：統編 + 備註（escapeVCard 會把換行轉為合法的 \n）
+    // NOTE：統編 + 備註（換行由 QP 編成 =0A，不需 3.0 的 \n 跳脫）
     let noteContent = note;
     if (taxIdVal) {
         noteContent = noteContent ? `統編: ${taxIdVal}\n${noteContent}` : `統編: ${taxIdVal}`;
     }
-    if (noteContent) lines.push(vProp('NOTE;CHARSET=UTF-8', noteContent));
+    if (noteContent) lines.push(vProp21('NOTE', noteContent));
 
-    if (categories) lines.push(vProp('CATEGORIES;CHARSET=UTF-8', categories));
+    if (categories) lines.push(vProp21('CATEGORIES', categories));
 
-    // ─── 影像：只嵌入「一張」聯絡人相片，優先使用透視校正後的名片圖 ───
+    // ─── 影像：主相片優先用透視校正後的名片圖，以 2.1 BASE64 區塊嵌入 ───
     let photoB64 = null;
     if (window.cardLogoBase64) {
         photoB64 = window.cardLogoBase64;               // 後端已壓到 <100KB
@@ -2461,16 +2489,15 @@ async function exportVCF() {
         }
     }
     if (photoB64) {
-        lines.push(foldLine(`PHOTO;ENCODING=b;TYPE=JPEG:${photoB64}`));
+        lines.push(...photoBlock21('PHOTO;ENCODING=BASE64;TYPE=JPEG', photoB64));
     }
 
-    // 背面照：以 item 群組附加（Apple/Google 可讀，Outlook 會安全忽略）
+    // 背面照：第二個 PHOTO 加 X-ABLABEL 參數（vcf_to_win.py 同款寫法）
     if (backPhotoDataUrl) {
         try {
             const resizedBack = await resizeCardImage(backPhotoDataUrl, 640, 0.8);
             const backB64 = resizedBack.split(',')[1];
-            lines.push(foldLine(`item1.PHOTO;ENCODING=b;TYPE=JPEG:${backB64}`));
-            lines.push('item1.X-ABLABEL:名片背面');
+            lines.push(...photoBlock21('PHOTO;ENCODING=BASE64;TYPE=JPEG;X-ABLABEL=Back', backB64));
         } catch (e) {
             console.warn('無法縮放背面影像:', e);
         }
@@ -2478,9 +2505,9 @@ async function exportVCF() {
 
     lines.push('END:VCARD');
 
-    // ★ 關鍵：加上 UTF-8 BOM，傳統版 Outlook 才會以 UTF-8 解碼（否則用
-    //   系統 ANSI 字碼頁 CP950 解讀 → 中文亂碼）。結尾補一組 CRLF。
-    const vcfString = '\uFEFF' + lines.join('\r\n') + '\r\n';
+    // 整檔純 ASCII（中文都在 QP 的 =XX 裡），任何字碼頁都不會誤判，
+    // 因此不需要 BOM。結尾補一組 CRLF。
+    const vcfString = lines.join('\r\n') + '\r\n';
 
     const blob = new Blob([vcfString], { type: 'text/vcard;charset=utf-8' });
     const url = URL.createObjectURL(blob);
