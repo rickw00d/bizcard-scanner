@@ -308,6 +308,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Fetch available Docker Model Runner models
     await populateModels();
 
+    // 記住使用者選的模型,重新整理後由 populateModels 恢復
+    if (ollamaModelSelect) {
+        ollamaModelSelect.addEventListener('change', () => {
+            localStorage.setItem(MODEL_STORE_KEY, ollamaModelSelect.value);
+        });
+    }
+
     // Event Listeners
     captureBtn.addEventListener('click', captureImage);
     retakeBtn.addEventListener('click', resetToCamera);
@@ -461,6 +468,12 @@ async function populateCameraList(forceRequest = false) {
     }
 }
 
+// 記住使用者選過的視覺模型;無記錄時的預設優先序。
+// qwen3.5 視覺推論在本機 Ollama 0.30.7 會崩(第二次請求 runner 終止),
+// 故預設鎖定已驗證穩定的 qwen2.5vl 系列,不能拿清單第一個當預設。
+const MODEL_STORE_KEY = 'scannerVisionModel';
+const PREFERRED_VISION_MODELS = ['qwen2.5vl:7b', 'qwen2.5vl:3b', 'llama3.2-vision'];
+
 async function populateModels() {
     try {
         const res = await fetch(`${DMR_BASE}/models`, {
@@ -492,7 +505,17 @@ async function populateModels() {
                 });
 
                 if (filteredModels.length > 0) {
-                    ollamaModelSelect.value = filteredModels[0].name;
+                    // 依序:使用者上次的選擇(含「不使用模型」)→ 已知穩定的
+                    // 視覺模型 → 清單第一個。Ollama 清單「最新下載排最前」,
+                    // 若無條件用第一個,新 pull 的模型會靜默蓋掉使用者的選擇。
+                    const stored = localStorage.getItem(MODEL_STORE_KEY);
+                    if (stored !== null && (stored === '' || filteredModels.some(m => m.name === stored))) {
+                        ollamaModelSelect.value = stored;
+                    } else {
+                        ollamaModelSelect.value =
+                            PREFERRED_VISION_MODELS.find(p => filteredModels.some(m => m.name === p)) ||
+                            filteredModels[0].name;
+                    }
                 }
             }
         }
