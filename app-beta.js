@@ -1807,8 +1807,6 @@ async function performOCR(imageDataUrl) {
         
         const regexExtracted = parseContactData(rawText);
         fillFormFromObj(regexExtracted);
-        
-        clearInterval(parseTimer);
 
         if (activeModelStatus) {
             activeModelStatus.textContent = '✓ OCR 完成 (背景 LLM 解析中...)';
@@ -2289,6 +2287,16 @@ function parseContactData(rawText) {
     postalCodeCnField.value = postalCodeCn || '';
     addressEnField.value = addressEn || '';
     postalCodeEnField.value = postalCodeCn || '';
+
+    // 呼叫端（performOCR 的 fillFormFromObj、parseTextToJsonViaLLM 的
+    // fallback）都依賴回傳物件；只填表不回傳會讓呼叫端拿到 undefined
+    // 而丟 TypeError（reading 'familyNameCn'）。
+    return {
+        familyNameCn, givenNameCn, givenNameEn, familyNameEn,
+        company, department, title, taxId: '',
+        workPhone, ext, mobile, email, website,
+        addressCn, postalCodeCn, addressEn,
+    };
 }
 
 
