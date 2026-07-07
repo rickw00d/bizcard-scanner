@@ -27,7 +27,20 @@
       "PowerShell(Invoke-RestMethod -Uri http://127.0.0.1:5050/api/health -TimeoutSec 10)",
       "PowerShell(python \"C:\\\\Temp\\\\System\\\\claude\\\\C--Users-rickwu-Documents-My-Code-business-card\\\\5fbe0679-e9a1-4ca8-950e-d5f9b19cc3bc\\\\scratchpad\\\\smoke_ocr_5050.py\")",
       "PowerShell(python -c \"import paddleocr, paddle; print\\('paddleocr', paddleocr.__version__\\); print\\('paddle', paddle.__version__\\)\")",
-      "PowerShell(python -c \"from PIL import Image; im=Image.open\\(r'C:\\\\Users\\\\rickwu\\\\Documents\\\\My Code\\\\business_card\\\\test_card.png'\\); print\\('test_card.png size:', im.size\\)\")"
+      "PowerShell(python -c \"from PIL import Image; im=Image.open\\(r'C:\\\\Users\\\\rickwu\\\\Documents\\\\My Code\\\\business_card\\\\test_card.png'\\); print\\('test_card.png size:', im.size\\)\")",
+      "PowerShell($c = Get-NetTCPConnection -LocalPort 5050 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if \\($c\\) { $p = Get-Process -Id $c.OwningProcess; \"$\\($p.ProcessName\\) PID=$\\($p.Id\\)\"; Stop-Process -Id $c.OwningProcess -Force -Confirm:$false; \"stopped\" } else { \"5050 not listening\" })",
+      "PowerShell(python opencv_backend.py)",
+      "PowerShell(Select-String -Path \"C:\\\\Temp\\\\System\\\\claude\\\\C--Users-rickwu-Documents-My-Code-business-card\\\\5fbe0679-e9a1-4ca8-950e-d5f9b19cc3bc\\\\tasks\\\\bskl696m6.output\" -Pattern 'attempt|PP-OCRv|ready' -SimpleMatch:$false)",
+      "PowerShell(python test_ocr_api.py)",
+      "PowerShell(python -c \"import requests,base64,sys; sys.stdout.reconfigure\\(encoding='utf-8'\\); b=base64.b64encode\\(open\\(r'C:\\\\Temp\\\\System\\\\claude\\\\C--Users-rickwu-Documents-My-Code-business-card\\\\5fbe0679-e9a1-4ca8-950e-d5f9b19cc3bc\\\\scratchpad\\\\tc_card.png','rb'\\).read\\(\\)\\).decode\\(\\); r=requests.post\\('http://127.0.0.1:5050/api/ocr',json={'image':b},timeout=120\\); print\\(r.json\\(\\).get\\('text'\\)\\)\")",
+      "PowerShell(Remove-Item -Recurse -Force -Confirm:$false __pycache__)",
+      "PowerShell(git restore __pycache__)",
+      "PowerShell(python \"C:\\\\Temp\\\\System\\\\claude\\\\C--Users-rickwu-Documents-My-Code-business-card\\\\5fbe0679-e9a1-4ca8-950e-d5f9b19cc3bc\\\\scratchpad\\\\repro_cp950.py\")",
+      "PowerShell(Select-String -Path \"C:\\\\Temp\\\\System\\\\claude\\\\C--Users-rickwu-Documents-My-Code-business-card\\\\5fbe0679-e9a1-4ca8-950e-d5f9b19cc3bc\\\\tasks\\\\bskl696m6.output\" -Pattern 'POST /api/\\(ocr|morph|detect\\)|cp950|UnicodeEncodeError|Unknown exception|DEBUG: Extracted|DEBUG: Resized' | ForEach-Object { $_.LineNumber.ToString\\(\\) + ': ' + $_.Line } | Select-Object -Last 40)",
+      "PowerShell(python -m py_compile opencv_backend.py && echo \"py_compile OK\"; $c = Get-NetTCPConnection -LocalPort 5050 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if \\($c\\) { Stop-Process -Id $c.OwningProcess -Force -Confirm:$false; \"old 5050 stopped \\(PID $\\($c.OwningProcess\\)\\)\" })",
+      "PowerShell(foreach \\($i in 1..40\\) { Start-Sleep -Seconds 3; $h = Invoke-RestMethod -Uri http://127.0.0.1:5050/api/health -TimeoutSec 3; if \\($h.ocr_ready\\) { break } }; $h | ConvertTo-Json -Compress; python \"C:\\\\Temp\\\\System\\\\claude\\\\C--Users-rickwu-Documents-My-Code-business-card\\\\5fbe0679-e9a1-4ca8-950e-d5f9b19cc3bc\\\\scratchpad\\\\repro_cp950.py\")",
+      "PowerShell(python \"C:\\\\Temp\\\\System\\\\claude\\\\C--Users-rickwu-Documents-My-Code-business-card\\\\5fbe0679-e9a1-4ca8-950e-d5f9b19cc3bc\\\\scratchpad\\\\concurrent_ocr.py\")",
+      "PowerShell(Select-String -Path \"C:\\\\Temp\\\\System\\\\claude\\\\C--Users-rickwu-Documents-My-Code-business-card\\\\5fbe0679-e9a1-4ca8-950e-d5f9b19cc3bc\\\\tasks\\\\bjlsjbawe.output\" -Pattern 'DEBUG: Extracted text|Error|Traceback|POST /api/ocr' | ForEach-Object Line | Select-Object -Last 10; git diff --stat)"
     ]
   }
 }

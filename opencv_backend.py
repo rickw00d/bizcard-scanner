@@ -23,7 +23,15 @@ except Exception as _torch_err:
 
 # --- DUMMY MODULE INJECTION TO FIX PADDLEX IMPORT ERROR ---
 import sys
+import threading
 from types import ModuleType
+
+# Windows 主控台/管線預設 cp950(Big5),print 到 Big5 沒有的字
+# (例如簡體「财」财)會丟 UnicodeEncodeError,把 /api/ocr
+# 整個請求炸成 HTTP 500。改成無法編碼的字元以 \uXXXX 逃逸輸出。
+for _s in (sys.stdout, sys.stderr):
+    if hasattr(_s, 'reconfigure'):
+        _s.reconfigure(errors='backslashreplace')
 class DummyDocument:
     pass
 dummy_module = ModuleType("langchain.docstore.document")
@@ -54,6 +62,10 @@ CORS(app)
 # ──────────────────────────────────────────────────────────────
 _reader = None
 _reader_error = None
+# Paddle 推論器非執行緒安全:並發呼叫會在 C++ 層丟
+# "RuntimeError: Unknown exception"(實測兩個 /api/ocr 同時進來就爆)。
+# 用全域鎖把所有推論序列化。
+_ocr_lock = threading.Lock()
 
 
 def get_reader():
@@ -68,12 +80,16 @@ def get_reader():
     # 模型已快取在本機 (~/.paddlex)，直接跳過此檢查。
     os.environ.setdefault('PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK', 'True')
 
-    # 重點：'chinese_cht' 繁中只有 PP-OCRv3 有模型，PP-OCRv4 會丟
-    # "No models are available for the language 'chinese_cht'..."。
+    # 重點：PaddleOCR 3.x 的預設模型是 PP-OCRv5，辨識模型已原生支援繁中，
+    # 準確率遠優於舊的 chinese_cht PP-OCRv3 mobile 模型
+    # （實測 v3 把「台北市松山區」認成「合北市扮山區」、@ 認成 o），
+    # 所以預設組態放第一優先；chinese_cht+PP-OCRv3 各組保留當備援，
+    # 供舊版 paddleocr（無 v5 模型）環境退回使用。
     # 依序嘗試多組參數，任一成功即採用。
     # 重點：每一組都關 mkldnn，避免退到某組時 oneDNN 又被打開，
     # 導致 reader 建得起來、但 reader.ocr() 推論時丟 onednn 相容性錯誤。
     attempts = [
+        dict(enable_mkldnn=False),  # PaddleOCR 3.x 預設 PP-OCRv5（含繁中）
         dict(use_angle_cls=True,  lang='chinese_cht', ocr_version='PP-OCRv3', enable_mkldnn=False),
         dict(lang='chinese_cht', ocr_version='PP-OCRv3', enable_mkldnn=False),
         dict(use_textline_orientation=True, lang='chinese_cht', ocr_version='PP-OCRv3', enable_mkldnn=False),
@@ -117,18 +133,20 @@ def get_reader():
 
 
 def ocr_call_compat(reader, img):
-    """相容呼叫 PaddleOCR：新舊版 .ocr()/.predict() 介面不一，逐一嘗試。"""
+    """相容呼叫 PaddleOCR：新舊版 .ocr()/.predict() 介面不一，逐一嘗試。
+    以 _ocr_lock 序列化，所有推論都必須經過這裡（勿直接呼叫 reader.ocr）。"""
     last = None
-    for call in (
-        lambda: reader.ocr(img),
-        lambda: reader.ocr(img, cls=True),
-        lambda: reader.predict(img),
-    ):
-        try:
-            return call()
-        except TypeError as e:
-            last = e
-            continue
+    with _ocr_lock:
+        for call in (
+            lambda: reader.ocr(img),
+            lambda: reader.ocr(img, cls=True),
+            lambda: reader.predict(img),
+        ):
+            try:
+                return call()
+            except TypeError as e:
+                last = e
+                continue
     if last is not None:
         raise last
     return None
@@ -382,8 +400,9 @@ def ocr_api():
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
         # Performance Optimization: Resize for faster OCR while maintaining accuracy
+        # 800 會把實拍名片的小字（email、地址）壓糊，v5 模型改用 1600 保留細節。
         h, w = img.shape[:2]
-        MAX_DIM = 800
+        MAX_DIM = 1600
         if max(h, w) > MAX_DIM:
             scale = MAX_DIM / max(h, w)
             new_w = int(w * scale)
@@ -468,8 +487,6 @@ def health_api():
 
 
 if __name__ == '__main__':
-    import threading
-
     def warmup_task():
         # Warm up OCR in the background. If it fails, the server keeps
         # running and detection/cropping stay fully functional.
@@ -483,7 +500,7 @@ if __name__ == '__main__':
                 dummy = cv2.imread('test_card.png')
             else:
                 dummy = np.ones((400, 600, 3), dtype=np.uint8) * 255
-            reader.ocr(dummy)
+            ocr_call_compat(reader, dummy)
             print("PaddleOCR warm-up complete.")
         except Exception as e:
             print(f"PaddleOCR warm-up failed: {e}")

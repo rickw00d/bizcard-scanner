@@ -3,7 +3,7 @@ import base64
 import os
 
 def test_ocr():
-    url = "http://127.0.0.1:5000/api/ocr"
+    url = "http://127.0.0.1:5050/api/ocr"
     image_path = "test_card.png"
     
     if not os.path.exists(image_path):
