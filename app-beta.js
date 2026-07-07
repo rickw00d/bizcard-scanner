@@ -990,6 +990,11 @@ async function autoCycleCrop(imageDataUrl, isBack) {
             }
         } else {
             console.warn('[Auto-Crop Beta] No card detected. Falling back to manual mode.');
+            // 後端沒開時原本靜默退回手動裁切，使用者只會覺得「自動裁切壞了」；
+            // 明確告知原因（與 runAutoCrop 的提示一致）。
+            if (lastDetectBackendDown) {
+                alert('無法連線到自動裁切後端服務 (localhost:5050)。\n請確認 opencv_backend.py 已啟動（run_scanner.bat），先以手動裁切繼續。');
+            }
             if (isBack) {
                 openBackCropSection(imageDataUrl);
             } else {
@@ -1564,7 +1569,10 @@ async function performBackOCR(imageDataUrl) {
         if (primaryEngine === 'docling') {
             text = await doclingFetch(imageDataUrl);
         } else {
-            text = await paddleOcrFetch(imageDataUrl);
+            // 與正面流程一致：先縮到 800px 再送 OCR。背面原本漏了這步，
+            // 透視校正後的大圖（~1200px）在 CPU 上一跑就是 20 秒以上。
+            const downscaled = await processImageForDMR(imageDataUrl, false, 800);
+            text = await paddleOcrFetch(downscaled);
         }
         clearInterval(backTimer);
 
