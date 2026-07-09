@@ -256,6 +256,8 @@ const textModelSelect = document.getElementById('textModelSelect');
 const ocrEngineSelect = document.getElementById('ocrEngineSelect');
 // 主 OCR 引擎選擇的持久化 key(值可為 paddle / docling / ollama:<model>)
 const OCR_ENGINE_STORE_KEY = 'betaOcrEngine';
+// 文字解析(LLM)模型選擇的持久化 key
+const TEXT_MODEL_STORE_KEY = 'betaTextModel';
 
 
 // Sections
@@ -412,10 +414,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Fetch available Docker Model Runner models
     await populateModels();
 
-    // 記住主 OCR 引擎選擇，重新整理後由 populateModels 恢復
+    // 記住主 OCR 引擎與解析模型選擇，重新整理後由 populateModels 恢復
     if (ocrEngineSelect) {
         ocrEngineSelect.addEventListener('change', () => {
             localStorage.setItem(OCR_ENGINE_STORE_KEY, ocrEngineSelect.value);
+        });
+    }
+    if (textModelSelect) {
+        textModelSelect.addEventListener('change', () => {
+            localStorage.setItem(TEXT_MODEL_STORE_KEY, textModelSelect.value);
         });
     }
 
@@ -645,16 +652,23 @@ async function populateModels() {
                     }
                 });
 
-                // Auto-select best small model for performance
+                // 解析模型優先序：實測 qwen3.5:0.8b 對欄位抽取常回「全空 JSON」
+                // （解析等於沒做），7B instruct 才能正確抽出欄位；
+                // 已驗證可用的放前面，小模型留作備援。
                 const PREFERRED_TEXT_MODELS = [
-                    'qwen3.5:0.8b', 'qwen2.5:1.5b', 'qwen2.5:3b',
-                    'gemma2:2b', 'phi3:mini', 'llama3.2:1b'
+                    'qwen2.5-7B-instruct',   // qcwind/qwen2.5-7B-instruct-Q4_K_M
+                    'qwen2.5:3b', 'qwen2.5:1.5b',
+                    'gemma2:2b', 'phi3:mini', 'llama3.2:1b', 'qwen3.5:0.8b'
                 ];
-                const preferred = PREFERRED_TEXT_MODELS.find(p => 
+                const storedTextModel = localStorage.getItem(TEXT_MODEL_STORE_KEY);
+                const preferred = PREFERRED_TEXT_MODELS.find(p =>
                     filteredModels.some(m => m.name === p || m.name.includes(p))
                 );
-                
-                if (preferred && textModelSelect) {
+
+                if (storedTextModel && filteredModels.some(m => m.name === storedTextModel) && textModelSelect) {
+                    // 使用者選過的解析模型優先恢復
+                    textModelSelect.value = storedTextModel;
+                } else if (preferred && textModelSelect) {
                     textModelSelect.value = filteredModels.find(m => m.name === preferred || m.name.includes(preferred))?.name || preferred;
                 } else if (textModelSelect) {
                     textModelSelect.value = '';
@@ -2319,27 +2333,12 @@ function parseContactData(rawText) {
         department = unusedLeftOvers.shift();
     }
 
-    // ═══ Populate Form Fields ═══
-    familyNameCnField.value = familyNameCn || '';
-    givenNameCnField.value = givenNameCn || '';
-    givenNameEnField.value = givenNameEn || '';
-    familyNameEnField.value = familyNameEn || '';
-    workPhoneField.value = workPhone || '';
-    extField.value = ext || '';
-    mobileField.value = mobile || '';
-    emailField.value = email || '';
-    websiteField.value = website || '';
-    companyField.value = company || '';
-    departmentField.value = department || '';
-    titleField.value = title || '';
-    addressCnField.value = addressCn || '';
-    postalCodeCnField.value = postalCodeCn || '';
-    addressEnField.value = addressEn || '';
-    postalCodeEnField.value = postalCodeCn || '';
-
-    // 呼叫端（performOCR 的 fillFormFromObj、parseTextToJsonViaLLM 的
-    // fallback）都依賴回傳物件；只填表不回傳會讓呼叫端拿到 undefined
-    // 而丟 TypeError（reading 'familyNameCn'）。
+    // 純函式：只回傳解析結果，絕不直接寫表單。
+    // 過去這裡會把 16 個欄位全部覆寫（含空字串），導致背景 AI 解析的
+    // fallback（parseTextToJsonViaLLM 在 LLM 回應非乾淨 JSON 時呼叫本
+    // 函式解析「LLM 回應文字」）在數十秒後把已填好的表單整片清空。
+    // 填表一律由呼叫端的 fillFormFromObj / mergeBackOCRWithLLM 決定
+    // （兩者都只寫非空值）。
     return {
         familyNameCn, givenNameCn, givenNameEn, familyNameEn,
         company, department, title, taxId: '',
