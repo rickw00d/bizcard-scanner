@@ -104,6 +104,12 @@ async function parseTextToJsonViaLLM(rawText) {
 
     try {
         const qwenPrompt = `You are a data extraction assistant. Extract all contact information from the following OCR text.
+
+CRITICAL RULE: Every Chinese value in your JSON output MUST be written in Traditional Chinese (繁體中文).
+If the OCR text contains Simplified Chinese characters, you MUST convert them to Traditional Chinese.
+Conversion examples: 财务部→財務部、经理→經理、电话→電話、100号5楼→100號5樓、松山区→松山區。
+Keep English letters and digits unchanged.
+
 Return ONLY a valid JSON object with these fields (use empty string "" if not found or unsure):
     { "familyNameCn": "", "givenNameCn": "", "givenNameEn": "", "familyNameEn": "", "company": "", "department": "", "title": "", "taxId": "", "workPhone": "", "ext": "", "mobile": "", "email": "", "website": "", "addressCn": "", "postalCodeCn": "", "addressEn": "" }
 
