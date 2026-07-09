@@ -253,6 +253,9 @@ const activeModelLabel = document.getElementById('activeModelLabel');
 const activeModelStatus = document.getElementById('activeModelStatus');
 const ollamaModelSelect = document.getElementById('ollamaModelSelect');
 const textModelSelect = document.getElementById('textModelSelect');
+const ocrEngineSelect = document.getElementById('ocrEngineSelect');
+// 主 OCR 引擎選擇的持久化 key(值可為 paddle / docling / ollama:<model>)
+const OCR_ENGINE_STORE_KEY = 'betaOcrEngine';
 
 
 // Sections
@@ -408,6 +411,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Fetch available Docker Model Runner models
     await populateModels();
+
+    // 記住主 OCR 引擎選擇，重新整理後由 populateModels 恢復
+    if (ocrEngineSelect) {
+        ocrEngineSelect.addEventListener('change', () => {
+            localStorage.setItem(OCR_ENGINE_STORE_KEY, ocrEngineSelect.value);
+        });
+    }
 
     // Check backend service status
     await checkServiceStatus();
@@ -651,13 +661,30 @@ async function populateModels() {
                 }
 
                 if (ollamaModelSelect) ollamaModelSelect.value = '';
+
+                // 把 Ollama 模型清單接進主 OCR 引擎下拉：
+                // 除了 PaddleOCR / Docling，也可直接選 Ollama 視覺模型當 OCR 引擎。
+                if (ocrEngineSelect) {
+                    ocrEngineSelect.querySelectorAll('option[value^="ollama:"]').forEach(o => o.remove());
+                    filteredModels.forEach(m => {
+                        const opt = document.createElement('option');
+                        opt.value = 'ollama:' + m.name;
+                        opt.textContent = 'Ollama: ' + m.name;
+                        ocrEngineSelect.appendChild(opt);
+                    });
+                    // 恢復上次選的引擎(選項還在清單裡才恢復)
+                    const storedEngine = localStorage.getItem(OCR_ENGINE_STORE_KEY);
+                    if (storedEngine && Array.from(ocrEngineSelect.options).some(o => o.value === storedEngine)) {
+                        ocrEngineSelect.value = storedEngine;
+                    }
+                }
             }
         }
     } catch (err) {
-        console.error('Failed to fetch Docker Model Runner models:', err);
-        if (textModelSelect) textModelSelect.innerHTML = '<option value="">Model Runner 未連線</option>';
+        console.error('Failed to fetch Ollama models:', err);
+        if (textModelSelect) textModelSelect.innerHTML = '<option value="">Ollama 或 Proxy 未連線</option>';
         if (ollamaModelSelect && ollamaModelSelect.tagName === 'SELECT') {
-            ollamaModelSelect.innerHTML = '<option value="">Model Runner 未連線</option>';
+            ollamaModelSelect.innerHTML = '<option value="">Ollama 或 Proxy 未連線</option>';
         }
     }
 }
@@ -1564,10 +1591,12 @@ async function performBackOCR(imageDataUrl) {
         }, 1000);
 
         // Use Selected OCR Engine
-        const primaryEngine = (typeof ocrEngineSelect !== 'undefined' && ocrEngineSelect && ocrEngineSelect.value) || 'paddle';
+        const primaryEngine = (ocrEngineSelect && ocrEngineSelect.value) || 'paddle';
         let text = '';
         if (primaryEngine === 'docling') {
             text = await doclingFetch(imageDataUrl);
+        } else if (primaryEngine.startsWith('ollama:')) {
+            text = await ollamaVisionOcr(primaryEngine.slice(7), imageDataUrl);
         } else {
             // 與正面流程一致：先縮到 800px 再送 OCR。背面原本漏了這步，
             // 透視校正後的大圖（~1200px）在 CPU 上一跑就是 20 秒以上。
@@ -1710,6 +1739,14 @@ function resetForm() {
 //  OCR — PaddleOCR + Docker Model Runner Pipeline
 // ═══════════════════════════════════════════════════════
 
+// 以 Ollama 視覺模型直接做整張名片 OCR(主引擎選 ollama:<model> 時使用)
+const VISION_OCR_PROMPT = '請辨識名片影像。務必保留原始字體（繁體維持繁體，簡體維持簡體），禁止變更字形。Extract all text exactly as it appears, preserving Traditional/Simplified script. No JSON, raw text only.';
+async function ollamaVisionOcr(model, imageDataUrl) {
+    const downscaled = await processImageForDMR(imageDataUrl, false, 800);
+    const b64 = imageDataUrlToBase64(downscaled);
+    return dmrChat(model, VISION_OCR_PROMPT, b64);
+}
+
 const OCR_FIELDS = [
     { key: 'familyNameCn', label: '中文姓' },
     { key: 'givenNameCn', label: '中文名' },
@@ -1771,13 +1808,17 @@ async function performOCR(imageDataUrl) {
 
         // --- Step 1: Primary OCR Engine ---
         const primaryEngine = (ocrEngineSelect && ocrEngineSelect.value) || 'paddle';
+        const engineLabel = primaryEngine.startsWith('ollama:') ? primaryEngine.slice(7)
+            : (primaryEngine === 'docling' ? 'Docling' : 'PaddleOCR');
         if (singleOcrStatus && activeModelLabel) {
-            activeModelLabel.textContent = primaryEngine === 'docling' ? 'Docling:' : 'PaddleOCR:';
+            activeModelLabel.textContent = engineLabel + ':';
         }
-        
+
         let rawText = '';
         if (primaryEngine === 'docling') {
             rawText = await doclingFetch(imageDataUrl);
+        } else if (primaryEngine.startsWith('ollama:')) {
+            rawText = await ollamaVisionOcr(primaryEngine.slice(7), imageDataUrl);
         } else {
             const downscaled = await processImageForDMR(imageDataUrl, false, 800);
             rawText = await paddleOcrFetch(downscaled);
