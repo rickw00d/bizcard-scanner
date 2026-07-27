@@ -1,0 +1,4 @@
+# Python venv(Ubuntu 後端環境,不入版控)
+.venv/
+__pycache__/
+*.pyc
