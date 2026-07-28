@@ -7,8 +7,8 @@
 #   停止:  ./run_scanner.sh stop    (或 tmux kill-session -t scanner)
 #
 # 對應網址:
-#   Scanner      http://localhost:8000/scanner.html
-#   VCF Checker  http://localhost:8000/vcf-checker.html
+#   Scanner      http://localhost:8001/scanner.html
+#   VCF Checker  http://localhost:8001/vcf-checker.html
 #   Open WebUI   http://localhost:8080
 set -euo pipefail
 
@@ -18,6 +18,9 @@ SESSION="scanner"
 # 用相對路徑,避免專案路徑含空白(My Code)在 tmux send-keys 被拆開。
 # 每個 window 都以 -c "$DIR" 為工作目錄,相對路徑即可正確解析。
 PY=".venv/bin/python"
+# 靜態網頁伺服器的埠(scanner.html / vcf-checker.html 從這裡開)。
+# 用 8001:避開被佔用的 8000,以及 Open WebUI 的 8080。
+HTTP_PORT=8001
 
 # --- 停止模式 ---
 if [[ "${1:-}" == "stop" ]]; then
@@ -52,15 +55,15 @@ tmux send-keys -t "$SESSION:Ollama" "ollama serve" C-m
 run "DMRProxy" "$PY dmr_proxy.py"
 run "OpenCV5050" "$PY opencv_backend.py"
 run "VCF5051" "$PY vcf_checker.py"
-run "HTTP8000" "$PY -m http.server 8000"
+run "HTTP$HTTP_PORT" "$PY -m http.server $HTTP_PORT"
 
 cat <<EOF
 
 所有服務已在 tmux session「$SESSION」啟動。
 
 請在瀏覽器開啟:
-  - Scanner:     http://localhost:8000/scanner.html
-  - VCF Checker: http://localhost:8000/vcf-checker.html
+  - Scanner:     http://localhost:$HTTP_PORT/scanner.html
+  - VCF Checker: http://localhost:$HTTP_PORT/vcf-checker.html
   - Open WebUI:  http://localhost:8080
 
 查看/切換各服務:  tmux attach -t $SESSION   (Ctrl-b 再按數字切 window,Ctrl-b d 離開)
