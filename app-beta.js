@@ -105,10 +105,12 @@ async function parseTextToJsonViaLLM(rawText) {
     try {
         const qwenPrompt = `You are a data extraction assistant. Extract all contact information from the following OCR text.
 
-CRITICAL RULE: Every Chinese value in your JSON output MUST be written in Traditional Chinese (繁體中文).
-If the OCR text contains Simplified Chinese characters, you MUST convert them to Traditional Chinese.
-Conversion examples: 财务部→財務部、经理→經理、电话→電話、100号5楼→100號5樓、松山区→松山區。
-Keep English letters and digits unchanged.
+CRITICAL RULES:
+1. NEVER translate between languages. English text must stay in English exactly as it appears; do NOT translate English into Chinese, and do NOT translate Chinese into English.
+2. Chinese text must be written in Traditional Chinese (繁體中文): if the OCR text contains Simplified Chinese characters, convert them to Traditional (character conversion only, not translation).
+   Examples: 财务部→財務部、经理→經理、100号5楼→100號5樓。
+3. Put English values in the *En fields and Chinese values in the *Cn fields. If there is no content in that language, leave the field "".
+Keep digits, punctuation, emails and URLs unchanged.
 
 Return ONLY a valid JSON object with these fields (use empty string "" if not found or unsure):
     { "familyNameCn": "", "givenNameCn": "", "givenNameEn": "", "familyNameEn": "", "company": "", "department": "", "title": "", "taxId": "", "workPhone": "", "ext": "", "mobile": "", "email": "", "website": "", "addressCn": "", "postalCodeCn": "", "addressEn": "" }
@@ -1916,6 +1918,67 @@ async function performOCR(imageDataUrl) {
     }
 }
 
+// ═══════════════════════════════════════════════════════
+//  Infer English Name from Email
+//  When OCR doesn't extract English names, parse the
+//  email local part for common business patterns.
+// ═══════════════════════════════════════════════════════
+function inferEnglishNameFromEmail() {
+    // Only run if both English name fields are empty
+    const givenEn = givenNameEnField.value.trim();
+    const familyEn = familyNameEnField.value.trim();
+    if (givenEn || familyEn) return;
+
+    const email = emailField.value.trim();
+    if (!email || !email.includes('@')) return;
+
+    const localPart = email.split('@')[0].toLowerCase();
+
+    // Skip if local part looks like pure numbers or generic (info, admin, sales, etc.)
+    const genericPrefixes = ['info', 'admin', 'sales', 'support', 'contact', 'service',
+        'hello', 'office', 'hr', 'marketing', 'help', 'noreply', 'no-reply', 'webmaster'];
+    if (/^\d+$/.test(localPart) || genericPrefixes.includes(localPart)) return;
+
+    // Attempt to split by common separators: . _ -
+    let parts = localPart.split(/[.\-_]+/).filter(p => p.length > 0);
+
+    // Filter out pure-number segments (e.g. rick.wu123 → ['rick', 'wu'])
+    parts = parts.map(p => p.replace(/\d+$/g, '')).filter(p => p.length > 0);
+
+    // Only pure-alpha parts count as name candidates
+    parts = parts.filter(p => /^[a-z]+$/i.test(p));
+
+    let firstName = '';
+    let lastName = '';
+
+    if (parts.length >= 2) {
+        // Most common pattern: firstname.lastname or first_last
+        firstName = parts[0];
+        lastName = parts[parts.length - 1];
+    } else if (parts.length === 1) {
+        const single = parts[0];
+        // Check if Chinese name is available to help determine last name
+        const familyCn = familyNameCnField.value.trim();
+        if (single.length <= 3) {
+            // Too short to reliably split (e.g. "rwu", "jli") — leave as given name only
+            firstName = single;
+        } else {
+            // Single long word — just set as given name, user can adjust
+            firstName = single;
+        }
+    }
+
+    if (firstName) {
+        // Capitalize first letter
+        givenNameEnField.value = firstName.charAt(0).toUpperCase() + firstName.slice(1);
+        console.log(`[Name Infer] Inferred English given name "${givenNameEnField.value}" from email "${email}"`);
+    }
+    if (lastName) {
+        familyNameEnField.value = lastName.charAt(0).toUpperCase() + lastName.slice(1);
+        console.log(`[Name Infer] Inferred English family name "${familyNameEnField.value}" from email "${email}"`);
+    }
+}
+
 function fillFormFromObj(obj) {
     for (const f of OCR_FIELDS) {
         const el = getFieldElement(f.key);
@@ -1924,6 +1987,8 @@ function fillFormFromObj(obj) {
     if (!postalCodeEnField.value && postalCodeCnField.value) {
         postalCodeEnField.value = postalCodeCnField.value;
     }
+    // If no English name was extracted by OCR, try to infer from email
+    inferEnglishNameFromEmail();
 }
 
 function getFormData() {
