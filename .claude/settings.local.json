@@ -84,7 +84,16 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git config *)",
-      "Bash(echo \"set: $\\(git config user.name\\) <$\\(git config user.email\\)> \\(local to this repo\\)\")"
+      "Bash(echo \"set: $\\(git config user.name\\) <$\\(git config user.email\\)> \\(local to this repo\\)\")",
+      "Bash(tmux capture-pane *)",
+      "Bash(grep -vE '^\\\\s*$')",
+      "Bash(curl -s -o /dev/null -w \"  scanner.html -> %{http_code}\\\\n\" http://localhost:8080/scanner.html)",
+      "Bash(./run_scanner.sh stop *)",
+      "Bash(systemctl is-active *)",
+      "Bash(awk 'NR<=2')",
+      "Bash(time curl -s http://localhost:11434/api/generate -d '{\"model\":\"qwen3-vl:30b\",\"prompt\":\"hi\",\"stream\":false,\"options\":{\"num_ctx\":8192},\"keep_alive\":\"5m\"}' -o /dev/null -w \"  首次回應完成\\\\n\")",
+      "Bash(ollama ps *)",
+      "Bash(docker stats *)"
     ]
   }
 }
