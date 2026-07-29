@@ -1,6 +1,10 @@
 # 統一行尾:Git 內部一律以 LF 儲存,避免 Windows/Linux 交替編輯產生整檔假 diff。
 * text=auto eol=lf
 
+# Windows 批次檔必須是 CRLF(LF 會讓 ^ 續行等語法在 cmd.exe 出錯)。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 # 二進位檔不要動(避免被當文字處理而損壞)
 *.png binary
 *.jpg binary
