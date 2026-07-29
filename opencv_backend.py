@@ -227,17 +227,39 @@ def detect_card(image_bytes):
     combined = cv2.bitwise_or(edged, thresh)
     combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel, iterations=2)
 
-    contours, _ = cv2.findContours(combined.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)[:15]
+    # 從兩張二值圖各取輪廓再合併掃描:
+    #   thresh   — 純 Otsu 門檻。亮卡片/深背景時能把卡片切成乾淨方塊,不受
+    #              背景 Canny 邊緣雜訊干擾(否則白名片放在深色布面上時,卡片
+    #              會和背景連成一大坨、框到整個右半邊)。
+    #   combined — 邊緣+門檻。低對比卡片(白卡片/淺桌)時才靠邊緣抓輪廓。
+    # RETR_LIST 取所有輪廓(含內層),才能在拒絕背景外框後仍找到裡面的卡片。
+    # 不做全域面積排序:讓 thresh(純門檻)的輪廓永遠排在 combined 前面。
+    # 否則 combined 常有一塊延伸到畫面邊緣的雜訊大輪廓(面積比卡片大),
+    # 會被當成 tier-1 搶先選走,框到整個右半邊/畫面。thresh-first 確保亮
+    # 卡片先在乾淨的純門檻圖命中;combined 只在 thresh 找不到時當低對比後備。
+    contours = []
+    for _mask in (thresh, combined):
+        _cs, _ = cv2.findContours(_mask.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        _cs = sorted(_cs, key=cv2.contourArea, reverse=True)[:15]
+        contours.extend(_cs)
 
     MIN_AREA = img_area * 0.08   # was 0.10 — relax slightly
+    MAX_AREA = img_area * 0.98        # 拒絕面積≈整張畫面的輪廓(通常不是卡片)
+    BORDER = int(round(0.02 * w))     # 邊界容忍:縮圖寬的 2%(約 16px)
     best_quad = None             # tier-2 result (4 points, any aspect)
     best_rect = None             # tier-3 result (minAreaRect)
     best_rect_area = 0.0
 
     for c in contours:
         area = cv2.contourArea(c)
-        if area < MIN_AREA:
+        if area < MIN_AREA or area > MAX_AREA:
+            continue
+
+        # 跳過「四邊都貼齊畫面邊界」的輪廓 = 桌墊邊/暗角/照片外框,而非卡片。
+        # 這是「框到整張畫面」的主因:最外層輪廓其實是整張照片的邊。
+        bx, by, bw2, bh2 = cv2.boundingRect(c)
+        if (bx <= BORDER and by <= BORDER
+                and bx + bw2 >= w - BORDER and by + bh2 >= h - BORDER):
             continue
 
         peri = cv2.arcLength(c, True)
