@@ -8,3 +8,7 @@ __pycache__/
 
 # 除錯用的名片測試圖
 fail_card*.jpg
+
+# 密鑰與本機 log,不入版控
+.webui_secret_key
+backend_log.txt
