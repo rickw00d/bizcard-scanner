@@ -57,8 +57,15 @@ class CORSProxyHandler(http.server.BaseHTTPRequestHandler):
                         self.send_header(key, value)
                 self.end_headers()
                 
-                self.wfile.write(response.read())
-                
+                # 串流轉發:邊讀邊寫並 flush,讓 SSE 串流回應即時抵達前端。
+                # 不可用 response.read() 一次讀完(會把串流整包緩衝、失去即時性)。
+                while True:
+                    chunk = response.read(1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+
         except urllib.error.HTTPError as e:
             self.send_response(e.code)
             self.send_header('Access-Control-Allow-Origin', '*')

@@ -29,10 +29,11 @@ async function dmrChat(model, prompt, imageBase64 = null, opts = {}) {
     }
     messages.push({ role: 'user', content });
 
-    const payload = { 
-        model, 
-        messages, 
-        stream: false,
+    const stream = typeof opts.onToken === 'function';
+    const payload = {
+        model,
+        messages,
+        stream,
         temperature: opts.temperature !== undefined ? opts.temperature : 0.2
     };
 
@@ -56,8 +57,34 @@ async function dmrChat(model, prompt, imageBase64 = null, opts = {}) {
         try { detail = JSON.parse(detail)?.error?.message || JSON.parse(detail)?.error || detail; } catch (e) { /* keep raw */ }
         throw new Error(`Ollama API Error: ${res.status} ${res.statusText}${detail ? ' — ' + detail : ''}`);
     }
-    const data = await res.json();
-    return data.choices?.[0]?.message?.content || '';
+    if (!stream) {
+        const data = await res.json();
+        return data.choices?.[0]?.message?.content || '';
+    }
+
+    // 串流:解析 SSE(data: {...}),把生成中的文字即時交給 opts.onToken。
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let full = '';
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let nl;
+        while ((nl = buffer.indexOf('\n')) !== -1) {
+            const line = buffer.slice(0, nl).trim();
+            buffer = buffer.slice(nl + 1);
+            if (!line.startsWith('data:')) continue;
+            const payloadStr = line.slice(5).trim();
+            if (payloadStr === '[DONE]') continue;
+            try {
+                const delta = JSON.parse(payloadStr).choices?.[0]?.delta?.content || '';
+                if (delta) { full += delta; opts.onToken(full); }
+            } catch (e) { /* 忽略 keep-alive / 不完整的行 */ }
+        }
+    }
+    return full;
 }
 
 // Robustly parse JSON from an LLM response: strips markdown fences,
@@ -1591,12 +1618,15 @@ Return ONLY a valid JSON object with EXACTLY these flat matching fields. Use emp
         // Free RAM/VRAM: evict any other models left resident from earlier runs
         progressText.textContent = `釋放其他模型記憶體中...`;
         await unloadModelsExcept(visionModel);
+        if (liveOCRText) liveOCRText.value = '';
         // Step 1: call the model (network / model-load / OOM errors surface here)
         try {
             resp = await dmrChat(visionModel, userPrompt, b64, {
                 systemPrompt: systemPrompt,
                 temperature: 0.2,
-                format: 'json'
+                format: 'json',
+                // 串流:邊生成邊寫進「Live OCR Output」視窗
+                onToken: (txt) => { if (liveOCRText) liveOCRText.value = txt; }
             });
         } catch (apiErr) {
             console.error('Vision API call failed:', apiErr);

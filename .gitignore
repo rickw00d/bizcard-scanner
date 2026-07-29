@@ -5,3 +5,6 @@ __pycache__/
 
 # Claude Code 個人本機設定(每次 session 會變動,不入版控)
 .claude/settings.local.json
+
+# 除錯用的名片測試圖
+fail_card*.jpg
