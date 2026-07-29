@@ -119,6 +119,24 @@ async function unloadModel(model) {
     }
 }
 
+// Preload the vision model into memory so the real OCR call doesn't pay the
+// cold-start weight load (~4s on a 7B). Fire-and-forget: triggered when the
+// crop UI opens, so loading overlaps with the seconds the user spends
+// adjusting corners. keep_alive 30m keeps it resident between scans.
+async function warmUpModel(model) {
+    if (!model) return;
+    try {
+        await fetch(`${OLLAMA_BASE}/api/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer local-key' },
+            body: JSON.stringify({ model, prompt: 'hi', stream: false, keep_alive: '30m' })
+        });
+        console.log('Warmed up model:', model);
+    } catch (e) {
+        console.warn('warmUpModel failed (non-fatal):', model, e);
+    }
+}
+
 // Free memory before a heavy run: unload every resident model except the
 // one we're about to use. Best-effort; never blocks the scan on failure.
 async function unloadModelsExcept(keepModel) {
@@ -833,6 +851,10 @@ async function autoCycleCrop(imageDataUrl, isBack) {
 async function openCropSection(imageDataUrl, initialCorners) {
     showSection(cropSection);
 
+    // 預熱:趁使用者調整裁切邊角的幾秒,先把模型載入記憶體,
+    // 讓稍後的 OCR 不必付冷啟動載入時間。fire-and-forget,不擋 UI。
+    warmUpModel((ollamaModelSelect && ollamaModelSelect.value) || '');
+
     // Use auto-detected corners when provided; otherwise a 10% margin default.
     cropCorners = initialCorners || {
         tl: { x: 10, y: 10 },
@@ -1187,6 +1209,9 @@ function closeBackCamera() {
 // ─── Back Crop Section ───
 async function openBackCropSection(imageDataUrl, initialCorners) {
     showSection(backCropSection);
+
+    // 預熱(同 openCropSection):趁裁切期間先載入模型。
+    warmUpModel((ollamaModelSelect && ollamaModelSelect.value) || '');
 
     // Use auto-detected corners when provided; otherwise a 10% margin default.
     backCropCorners = initialCorners || {
