@@ -49,8 +49,14 @@ run() {  # run <window-name> <command...>
   tmux send-keys -t "$SESSION:$name" "$*" C-m
 }
 
-# window 0(Ollama)已建立,直接送指令
-tmux send-keys -t "$SESSION:Ollama" "ollama serve" C-m
+# window 0(Ollama):Ollama 通常已由 systemd 服務常駐於 11434。
+# 若已在跑就別再起第二個(會與 systemd 搶埠、且可能用到不同的 context 設定);
+# 只有在沒人聽 11434 時才自己 ollama serve。
+if curl -s -o /dev/null http://127.0.0.1:11434/api/version 2>/dev/null; then
+  tmux send-keys -t "$SESSION:Ollama" "echo 'Ollama 已在 11434 執行(systemd 服務),不重複啟動。'; ollama ps" C-m
+else
+  tmux send-keys -t "$SESSION:Ollama" "ollama serve" C-m
+fi
 [[ $HAVE_WEBUI -eq 1 ]] && run "OpenWebUI" "open-webui serve"
 run "DMRProxy" "$PY dmr_proxy.py"
 run "OpenCV5050" "$PY opencv_backend.py"
