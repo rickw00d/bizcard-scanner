@@ -1290,7 +1290,9 @@ function skipBackCrop() {
 async function performBackOCR(imageDataUrl) {
     showSection(backProcessingSection);
     try {
-        const b64 = imageDataUrlToBase64(imageDataUrl);
+        // 同 performOCR:送模型前縮到 1024px,避免大圖拖慢 vision 編碼。
+        const resizedUrl = await resizeCardImage(imageDataUrl, 1024, 0.85);
+        const b64 = imageDataUrlToBase64(resizedUrl);
         const visionModel = (ollamaModelSelect && ollamaModelSelect.value) || 'llama3.2-vision';
         
         const backStartTime = Date.now();
@@ -1501,7 +1503,11 @@ function getFieldElement(key) {
 
 async function performOCR(imageDataUrl) {
     try {
-        const b64 = imageDataUrlToBase64(imageDataUrl);
+        // 送模型前先縮到最長邊 1024px:名片文字在 1024px 已清晰,但原始
+        // 相機/上傳影像常達 3000~4000px,整張送會讓 vision 編碼暴慢
+        // (實測 3000px≈9s vs 1024px≈2s)。resizeCardImage 只縮不放大。
+        const resizedUrl = await resizeCardImage(imageDataUrl, 1024, 0.85);
+        const b64 = imageDataUrlToBase64(resizedUrl);
         const visionModel = (ollamaModelSelect && ollamaModelSelect.value) || 'llama3.2-vision';
 
         progressFill.style.width = '30%';
