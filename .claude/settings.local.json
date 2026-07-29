@@ -93,7 +93,16 @@
       "Bash(awk 'NR<=2')",
       "Bash(time curl -s http://localhost:11434/api/generate -d '{\"model\":\"qwen3-vl:30b\",\"prompt\":\"hi\",\"stream\":false,\"options\":{\"num_ctx\":8192},\"keep_alive\":\"5m\"}' -o /dev/null -w \"  首次回應完成\\\\n\")",
       "Bash(ollama ps *)",
-      "Bash(docker stats *)"
+      "Bash(docker stats *)",
+      "Bash(ps -eo pid,user,etime,cmd)",
+      "Bash(systemctl status *)",
+      "Bash(curl -s http://localhost:11434/api/version)",
+      "Bash(tmux has-session *)",
+      "Bash(systemctl show *)",
+      "Bash(curl -s http://localhost:11434/v1/models)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('models:', [m['id'] for m in d.get\\('data',[]\\)]\\)\")",
+      "Bash(curl -s http://localhost:12435/v1/models -H \"Authorization: Bearer local-key\")",
+      "Bash(node --check app.js)"
     ]
   }
 }
