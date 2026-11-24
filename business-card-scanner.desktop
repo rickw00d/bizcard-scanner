@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=名片掃描服務
+Name[en]=Business Card Scanner
+Comment=啟動所有後端服務 (Ollama, OpenCV 5050, VCF 5051, HTTP 8000, DMR 代理 12435)
+Comment[en]=Start all backend services in a tmux session
+Exec=gnome-terminal --title="Business Card Scanner" -- bash -c "'/home/nvidia/文件/My Code/business_card/run_scanner.sh' && tmux attach -t scanner"
+Icon=camera-photo
+Terminal=false
+Categories=Utility;

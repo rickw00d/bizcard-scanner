@@ -1,0 +1,16 @@
+# business_card 後端 Python 相依套件 (Ubuntu / venv)
+# 安裝:  .venv/bin/pip install -r requirements.txt
+#
+# --- 核心:三個服務啟動就需要 ---
+flask
+flask-cors
+numpy
+opencv-python-headless      # opencv_backend.py 的 cv2(伺服器端無 GUI,用 headless)
+rapidfuzz                   # vcf_checker.py 模糊比對(缺少會自動退回 difflib)
+
+# --- OCR(可選,PaddleOCR 為延遲載入;不裝也能做裁切) ---
+# 需要真正跑 OCR 時再解除下面註解安裝:
+# paddlepaddle
+# paddleocr
+#
+# --- open-webui 不從這裡裝(體積大、相依多),另用 pipx 或獨立 venv ---

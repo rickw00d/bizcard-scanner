@@ -1,0 +1,30 @@
+Checking connectivity to the model hosters, this may take a while. To bypass this check, set `PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK` to `True`.
+Traceback (most recent call last):
+  File "C:\Users\rickwu\Documents\My Code\business_card\test_paddle_config.py", line 6, in <module>
+    reader = PaddleOCR(use_angle_cls=True, lang='chinese_cht', ocr_version='PP-OCRv4', enable_mkldnn=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rickwu\AppData\Local\Programs\Python\Python311\Lib\site-packages\paddleocr\_pipelines\ocr.py", line 107, in __init__
+    raise ValueError(
+ValueError: No models are available for the language 'chinese_cht' and OCR version 'PP-OCRv4'.
+C:\Users\rickwu\Documents\My Code\business_card\test_paddle_config.py:14: DeprecationWarning: The parameter `use_angle_cls` has been deprecated and will be removed in the future. Please use `use_textline_orientation` instead.
+  reader = PaddleOCR(use_angle_cls=True, lang='chinese_cht', ocr_version='PP-OCRv3', enable_mkldnn=True)
+資訊: 找不到提供模式的檔案。
+C:\Users\rickwu\AppData\Local\Programs\Python\Python311\Lib\site-packages\paddle\utils\cpp_extension\extension_utils.py:712: UserWarning: No ccache found. Please be aware that recompiling all source files may be required. You can download and install ccache from: https://github.com/ccache/ccache/blob/master/doc/INSTALL.md
+  warnings.warn(warning_message)
+Creating model: ('PP-LCNet_x1_0_doc_ori', None)
+Model files already exist. Using cached files. To redownload, please delete the directory manually: `C:\Users\rickwu\.paddlex\official_models\PP-LCNet_x1_0_doc_ori`.
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I0313 16:40:11.690984 31464 onednn_context.cc:81] oneDNN v3.6.2
+Creating model: ('UVDoc', None)
+Model files already exist. Using cached files. To redownload, please delete the directory manually: `C:\Users\rickwu\.paddlex\official_models\UVDoc`.
+Creating model: ('PP-LCNet_x1_0_textline_ori', None)
+Model files already exist. Using cached files. To redownload, please delete the directory manually: `C:\Users\rickwu\.paddlex\official_models\PP-LCNet_x1_0_textline_ori`.
+Creating model: ('PP-OCRv3_mobile_det', None)
+Model files already exist. Using cached files. To redownload, please delete the directory manually: `C:\Users\rickwu\.paddlex\official_models\PP-OCRv3_mobile_det`.
+Creating model: ('chinese_cht_PP-OCRv3_mobile_rec', None)
+Model files already exist. Using cached files. To redownload, please delete the directory manually: `C:\Users\rickwu\.paddlex\official_models\chinese_cht_PP-OCRv3_mobile_rec`.
+Testing PP-OCRv4...
+PP-OCRv4 Failed!
+
+Testing PP-OCRv3...
+PP-OCRv3 Success!

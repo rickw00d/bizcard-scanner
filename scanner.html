@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business Card Scanner to vCard</title>
+    <!-- Modern Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+    <!-- OCR powered by Docker Model Runner (OpenAI-compatible API) -->
+</head>
+
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <div class="logo-container">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-address-card"></i>
+                </div>
+                <div class="logo-text">
+                    <h1>Card<span>Scanner</span></h1>
+                    <p class="tagline">Enterprise Business Card Digitalization</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Service Status Banner (hidden when all services are online) -->
+        <div id="serviceStatusBanner" class="service-status-banner hidden">
+            <div class="status-banner-content">
+                <i class="fa-solid fa-triangle-exclamation status-banner-icon"></i>
+                <div class="status-banner-messages">
+                    <div id="proxyStatus" class="status-item hidden">
+                        <span class="status-dot offline"></span>
+                        <span><strong>CORS Proxy</strong> (Port 12435) 未啟動 — Vision LLM 功能將無法使用</span>
+                    </div>
+                    <div id="cvBackendStatus" class="status-item hidden">
+                        <span class="status-dot offline"></span>
+                        <span><strong>OpenCV Backend</strong> (Port 5050) 未啟動 — 自動裁切功能將無法使用</span>
+                    </div>
+                </div>
+                <button id="statusRetryBtn" class="status-retry-btn" title="重新檢測">
+                    <i class="fa-solid fa-rotate-right"></i>
+                </button>
+            </div>
+            <p class="status-hint">請執行 <code>run_scanner.bat</code> 啟動所有後端服務</p>
+        </div>
+
+        <main class="glass-panel main-content">
+            <!-- Camera View Area -->
+            <section id="cameraSection" class="active">
+                <div class="section-header">
+                    <h2><i class="fa-solid fa-camera"></i> Capture New Card</h2>
+                    <p>Position the business card within the frame for optimal scanning</p>
+                </div>
+
+                <div class="video-container" id="videoContainer">
+                    <video id="videoFeed" autoplay playsinline></video>
+                    <!-- Targeting frame for business card alignment -->
+                    <div class="overlay-frame luxury-frame">
+                        <div class="corner top-left"></div>
+                        <div class="corner top-right"></div>
+                        <div class="corner bottom-left"></div>
+                        <div class="corner bottom-right"></div>
+                        <div class="scanning-line"></div>
+                    </div>
+                </div>
+
+                <!-- Camera Controls Row -->
+                <div class="camera-toolbar professional-toolbar">
+                    <div class="toolbar-row">
+                        <div class="camera-select-wrapper">
+                            <i class="fa-solid fa-video" title="Select Input Source"></i>
+                            <select id="cameraSelect">
+                                <option value="">Detecting cameras...</option>
+                            </select>
+                        </div>
+                        <div class="flip-controls">
+                            <button id="rotate180Btn" class="flip-btn" title="Rotate 180°">
+                                <i class="fa-solid fa-rotate"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="toolbar-row">
+                        <div class="model-controls" style="justify-content: center;">
+                            <div class="camera-select-wrapper model-select-wrapper" title="Ollama Vision Model (請選擇可處理影像的模型)" style="max-width: 300px;">
+                                <i class="fa-solid fa-brain" style="color: var(--primary);"></i>
+                                <select id="ollamaModelSelect" style="flex: 1;">
+                                    <option value="">Loading models...</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Zoom Slider -->
+                <div class="zoom-toolbar sleek-zoom">
+                    <button type="button" id="zoomOutBtn" class="icon-btn" title="Zoom Out">
+                        <i class="fa-solid fa-minus"></i>
+                    </button>
+                    <div class="slider-container">
+                        <input type="range" id="zoomSlider" min="1" max="5" step="0.1" value="1">
+                        <div class="zoom-track"></div>
+                    </div>
+                    <button type="button" id="zoomInBtn" class="icon-btn" title="Zoom In">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                    <span id="zoomLabel" class="zoom-label">1.0x</span>
+                </div>
+
+
+                <div class="main-actions">
+                    <button id="captureBtn" class="action-btn primary-action">
+                        <i class="fa-solid fa-shutter-speed"></i>
+                        <span>Capture Now</span>
+                    </button>
+
+                    <div class="action-divider"><span>OR</span></div>
+
+                    <label for="fileInput" class="action-btn secondary-action">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <span>Upload Image</span>
+                        <input type="file" id="fileInput" accept="image/*" class="hidden">
+                    </label>
+                </div>
+
+                <div id="cameraError" class="error-msg hidden">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <span>Could not access camera. Please check system permissions.</span>
+                </div>
+            </section>
+
+
+
+            <!-- ═══ Crop & Perspective Correction Section ═══ -->
+            <section id="cropSection" class="hidden">
+                <h2><i class="fa-solid fa-crop-simple"></i> 裁切與修正</h2>
+                <p class="subtitle">拖動四個角點以標記名片邊緣，然後點擊「確認裁切」</p>
+
+                <div class="crop-container" id="cropContainer">
+                    <canvas id="cropCanvas"></canvas>
+                    <!-- 4 corner drag handles -->
+                    <div class="crop-handle" id="handle-tl" data-corner="tl"></div>
+                    <div class="crop-handle" id="handle-tr" data-corner="tr"></div>
+                    <div class="crop-handle" id="handle-bl" data-corner="bl"></div>
+                    <div class="crop-handle" id="handle-br" data-corner="br"></div>
+                    <!-- Lines connecting handles -->
+                    <svg id="cropOverlaySvg" class="crop-overlay-svg">
+                        <polygon id="cropPolygon" points="0,0 0,0 0,0 0,0" />
+                    </svg>
+                </div>
+
+                <div class="controls mt-4">
+                    <button type="button" id="autoCropBtn" class="accent-btn">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> 自動偵測
+                    </button>
+                    <button type="button" id="cropConfirmBtn" class="primary-btn">
+                        <i class="fa-solid fa-check"></i> 確認裁切
+                    </button>
+                    <button type="button" id="cropSkipBtn" class="secondary-btn">
+                        <i class="fa-solid fa-forward"></i> 跳過
+                    </button>
+                    <button type="button" id="cropRetakeBtn" class="secondary-btn">
+                        <i class="fa-solid fa-arrow-rotate-left"></i> 重拍
+                    </button>
+                </div>
+            </section>
+
+            <!-- Processing / Loading Area -->
+            <section id="processingSection" class="hidden">
+                <div class="loader-container">
+                    <div class="spinner"></div>
+                    <h2>Scanning Business Card...</h2>
+                    <p id="progressText">Analyzing image with Vision Model...</p>
+                    <div class="progress-bar">
+                        <div id="progressFill"></div>
+                    </div>
+                    <!-- Engine status indicator -->
+                    <div id="singleOcrStatus" class="ocr-engine-status hidden" style="justify-content: center;">
+                        <span id="activeModelLabel" class="engine-label">模型:</span>
+                        <span id="activeModelStatus" class="engine-state">等待中...</span>
+                    </div>
+                </div>
+
+                <!-- Real-time OCR Text Display -->
+                <div class="real-time-ocr">
+                    <p class="text-xs text-muted mb-2">Live OCR Output:</p>
+                    <textarea id="liveOCRText" readonly
+                        placeholder="Text will appear here as it is scanned..."></textarea>
+                </div>
+
+                <!-- Hidden canvas for capturing the frozen frame to send to OCR -->
+                <canvas id="captureCanvas"></canvas>
+                <!-- Display captured image during processing -->
+                <img id="previewImage" alt="Captured Card">
+            </section>
+
+
+
+
+            <!-- Result Editor Area -->
+            <section id="resultSection" class="hidden">
+                <h2>Review Extracted Details</h2>
+                <p class="subtitle">Please verify and correct the information below</p>
+
+                <form id="contactForm">
+                    <!-- Chinese Name Row -->
+                    <div class="form-section-label">中文姓名</div>
+                    <div class="form-group half-width">
+                        <label for="familyNameCnField"><i class="fa-solid fa-user"></i> 中文姓</label>
+                        <input type="text" id="familyNameCnField" placeholder="e.g. 王">
+                    </div>
+                    <div class="form-group half-width">
+                        <label for="givenNameCnField"><i class="fa-solid fa-user"></i> 中文名</label>
+                        <input type="text" id="givenNameCnField" placeholder="e.g. 小明">
+                    </div>
+
+                    <!-- English Name Row -->
+                    <div class="form-section-label">English Name</div>
+                    <div class="form-group half-width">
+                        <label for="givenNameEnField"><i class="fa-solid fa-user"></i> First Name</label>
+                        <input type="text" id="givenNameEnField" placeholder="e.g. Rick">
+                    </div>
+                    <div class="form-group half-width">
+                        <label for="familyNameEnField"><i class="fa-solid fa-user"></i> Last Name</label>
+                        <input type="text" id="familyNameEnField" placeholder="e.g. Wu">
+                    </div>
+
+                    <!-- Company / Department -->
+                    <div class="form-group half-width">
+                        <label for="companyField"><i class="fa-solid fa-building"></i> 公司/組織</label>
+                        <input type="text" id="companyField" placeholder="e.g. 科技公司">
+                    </div>
+                    <div class="form-group half-width">
+                        <label for="departmentField"><i class="fa-solid fa-sitemap"></i> 部門</label>
+                        <input type="text" id="departmentField" placeholder="e.g. 研發部門">
+                    </div>
+
+                    <div class="form-group half-width">
+                        <label for="titleField"><i class="fa-solid fa-briefcase"></i> 職稱</label>
+                        <input type="text" id="titleField" placeholder="e.g. 資深系統架構師">
+                    </div>
+                    <div class="form-group half-width">
+                        <label for="taxIdField"><i class="fa-solid fa-hashtag"></i> 統一編號</label>
+                        <input type="text" id="taxIdField" placeholder="e.g. 12345678">
+                    </div>
+
+                    <div class="form-group forty-width">
+                        <label for="workPhoneField"><i class="fa-solid fa-phone"></i> 公司電話</label>
+                        <input type="tel" id="workPhoneField" placeholder="e.g. 02-23456789">
+                    </div>
+                    <div class="form-group twenty-width">
+                        <label for="extField"><i class="fa-solid fa-phone-volume"></i> 分機</label>
+                        <input type="text" id="extField" placeholder="e.g. 123">
+                    </div>
+                    <div class="form-group forty-width">
+                        <label for="mobileField"><i class="fa-solid fa-mobile-screen"></i> 手機</label>
+                        <input type="tel" id="mobileField" placeholder="e.g. 0912345678">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="emailField"><i class="fa-solid fa-envelope"></i> Email</label>
+                        <input type="email" id="emailField" placeholder="e.g. rickwood@live.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="websiteField"><i class="fa-solid fa-globe"></i> 公司網址</label>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button type="button" id="prefixHttpBtn" class="secondary-btn"
+                                style="padding: 0 0.5rem; white-space: nowrap; font-size: 0.9em; border-radius: 4px;">+
+                                http://</button>
+                            <input type="url" id="websiteField" placeholder="e.g. www.example.com" style="flex: 1;">
+                        </div>
+                    </div>
+
+                    <!-- Chinese Address -->
+                    <div class="form-section-label">中文地址</div>
+                    <div class="form-group three-quarter-width">
+                        <label for="addressCnField"><i class="fa-solid fa-location-dot"></i> 中文地址</label>
+                        <input type="text" id="addressCnField" placeholder="e.g. 台北市中正區忠孝東路一段100號">
+                    </div>
+                    <div class="form-group quarter-width">
+                        <label for="postalCodeCnField"><i class="fa-solid fa-hashtag"></i> 郵遞區號</label>
+                        <input type="text" id="postalCodeCnField" placeholder="e.g. 100">
+                    </div>
+
+                    <!-- English Address -->
+                    <div class="form-section-label">English Address</div>
+                    <div class="form-group three-quarter-width">
+                        <label for="addressEnField"><i class="fa-solid fa-location-dot"></i> English Address</label>
+                        <input type="text" id="addressEnField" placeholder="e.g. No.1, Sec.1, Zhongxiao E. Rd.">
+                    </div>
+                    <div class="form-group quarter-width">
+                        <label for="postalCodeEnField"><i class="fa-solid fa-hashtag"></i> Post Code</label>
+                        <input type="text" id="postalCodeEnField" placeholder="e.g. 100">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="noteField"><i class="fa-solid fa-sticky-note"></i> 備註</label>
+                        <textarea id="noteField" rows="2" placeholder="e.g. 這是測試高相容性的 vCard 檔案"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="categoriesField"><i class="fa-solid fa-tags"></i> 類別</label>
+                        <input type="text" id="categoriesField" placeholder="e.g. VIP客戶, 2026名單 (逗號分隔)">
+                    </div>
+
+                    <!-- Back-of-Card Photo Section -->
+                    <div class="form-group back-photo-section">
+                        <label><i class="fa-solid fa-image"></i> 名片背面照片</label>
+                        <p class="text-xs text-muted">是否要新增名片背面照片？</p>
+                        <div class="back-photo-controls">
+                            <label for="backPhotoInput" class="secondary-btn upload-back-btn" title="上傳背面照片">
+                                <i class="fa-solid fa-upload"></i> 上傳照片
+                                <input type="file" id="backPhotoInput" accept="image/*" class="hidden">
+                            </label>
+                            <button type="button" id="captureBackBtn" class="secondary-btn" title="拍攝背面照片">
+                                <i class="fa-solid fa-camera"></i> 拍攝
+                            </button>
+                            <button type="button" id="removeBackPhotoBtn" class="secondary-btn danger-text hidden"
+                                title="移除背面照片">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                        <div id="backPhotoPreview" class="back-photo-preview hidden">
+                            <img id="backPreviewImg" alt="Back of card">
+                        </div>
+                    </div>
+
+                    <!-- Card Logo Preview -->
+                    <div class="form-group card-logo-preview-wrapper" style="text-align: center; margin-bottom: 2rem;">
+                        <label><i class="fa-solid fa-id-card"></i> 專屬名片影像 (將匯入為 Logo)</label>
+                        <div style="margin-top: 0.5rem; border: 2px dashed rgba(255,255,255,0.1); padding: 10px; border-radius: 8px;">
+                            <img id="cardLogoPreview" class="hidden" style="max-width: 100%; height: auto; border-radius: 4px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" id="manualCropBtn" class="secondary-btn" title="重新裁切正面影像（不會重新辨識）">
+                            <i class="fa-solid fa-crop"></i> 重新裁切
+                        </button>
+                        <button type="button" id="manualBackCropBtn" class="secondary-btn hidden" title="手動調整背面裁切區域">
+                            <i class="fa-solid fa-crop"></i> 背面裁切
+                        </button>
+                        <button type="button" id="retakeBtn" class="secondary-btn">
+                            <i class="fa-solid fa-arrow-rotate-left"></i> 重拍
+                        </button>
+                        <button type="submit" id="exportBtn" class="primary-btn">
+                            <i class="fa-solid fa-download"></i> 匯出 vCard (.vcf)
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Back Photo Camera Capture Modal -->
+            <section id="backCameraSection" class="hidden">
+                <h2>拍攝名片背面</h2>
+                <p class="subtitle">將名片背面對準相機框內</p>
+                <div class="video-container" id="backVideoContainer">
+                    <video id="backVideoFeed" autoplay playsinline></video>
+                    <div class="overlay-frame">
+                        <div class="corner top-left"></div>
+                        <div class="corner top-right"></div>
+                        <div class="corner bottom-left"></div>
+                        <div class="corner bottom-right"></div>
+                    </div>
+                </div>
+
+                <!-- Back Camera Toolbar -->
+                <div class="camera-toolbar">
+                    <div class="flip-controls" style="width:100%; justify-content:center;">
+                        <button id="backRotate180Btn" class="flip-btn" title="旋轉 180 度 (Rotate 180°)">
+                            <i class="fa-solid fa-rotate"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Back Zoom Slider -->
+                <div class="zoom-toolbar">
+                    <button type="button" id="backZoomOutBtn" class="icon-btn" title="縮小 (Zoom Out)"><i
+                            class="fa-solid fa-magnifying-glass-minus"></i></button>
+                    <input type="range" id="backZoomSlider" min="1" max="5" step="0.1" value="1">
+                    <button type="button" id="backZoomInBtn" class="icon-btn" title="放大 (Zoom In)"><i
+                            class="fa-solid fa-magnifying-glass-plus"></i></button>
+                    <span id="backZoomLabel" class="zoom-label">1.0x</span>
+                </div>
+
+                <canvas id="backCaptureCanvas" class="hidden"></canvas>
+                <div class="controls">
+                    <button type="button" id="backCaptureTakeBtn" class="primary-btn">
+                        <i class="fa-solid fa-camera"></i> 拍攝
+                    </button>
+                    <button type="button" id="backCaptureCancelBtn" class="secondary-btn">
+                        <i class="fa-solid fa-xmark"></i> 取消
+                    </button>
+                </div>
+            </section>
+
+            <!-- Back Crop & Perspective Correction -->
+            <section id="backCropSection" class="hidden">
+                <h2><i class="fa-solid fa-crop-simple"></i> 背面裁切與修正</h2>
+                <p class="subtitle">拖動四角標記名片邊緣</p>
+
+                <div class="crop-container" id="backCropContainer">
+                    <canvas id="backCropCanvas"></canvas>
+                    <div class="crop-handle" id="back-handle-tl" data-corner="tl"></div>
+                    <div class="crop-handle" id="back-handle-tr" data-corner="tr"></div>
+                    <div class="crop-handle" id="back-handle-bl" data-corner="bl"></div>
+                    <div class="crop-handle" id="back-handle-br" data-corner="br"></div>
+                    <svg id="backCropOverlaySvg" class="crop-overlay-svg">
+                        <polygon id="backCropPolygon" points="0,0 0,0 0,0 0,0" />
+                    </svg>
+                </div>
+
+                <div class="controls mt-4">
+                    <button type="button" id="backAutoCropBtn" class="accent-btn">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> 自動偵測
+                    </button>
+                    <button type="button" id="backCropConfirmBtn" class="primary-btn">
+                        <i class="fa-solid fa-check"></i> 確認裁切
+                    </button>
+                    <button type="button" id="backCropSkipBtn" class="secondary-btn">
+                        <i class="fa-solid fa-forward"></i> 跳過
+                    </button>
+                </div>
+            </section>
+
+            <!-- Back OCR Processing -->
+            <section id="backProcessingSection" class="hidden">
+                <div class="loader-container">
+                    <div class="spinner"></div>
+                    <h2>掃描名片背面...</h2>
+                    <p id="backProgressText">Analyzing image with Vision Model...</p>
+                    <div class="progress-bar">
+                        <div id="backProgressFill"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Success State -->
+            <section id="successSection" class="hidden text-center">
+                <div class="success-icon">
+                    <i class="fa-solid fa-circle-check"></i>
+                </div>
+                <h2>Contact Exported!</h2>
+                <p>The vCard file has been downloaded successfully.</p>
+                <div class="import-instructions">
+                    <p><strong>匯入聯絡人:</strong></p>
+                    <ol>
+                        <li>開啟 Outlook → 檔案 → 開啟與匯出 → 匯入/匯出</li>
+                        <li>選擇「匯入 vCard 檔案」</li>
+                        <li>選擇下載的 <code>.vcf</code> 檔案</li>
+                    </ol>
+                    <p style="margin-top: 0.5rem;"><strong>或匯入至 Google Contacts:</strong></p>
+                    <ol>
+                        <li>前往 <a href="https://contacts.google.com" target="_blank">Google Contacts</a></li>
+                        <li>點擊左側「匯入」</li>
+                        <li>選擇下載的 <code>.vcf</code> 檔案</li>
+                    </ol>
+                </div>
+                <button id="scanAnotherBtn" class="primary-btn mt-4">Scan Another Card</button>
+            </section>
+        </main>
+
+
+    </div>
+
+    <!-- Application Logic -->
+    <script src="app.js"></script>
+</body>
+
+</html>

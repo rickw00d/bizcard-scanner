@@ -1,0 +1,25 @@
+--- Benchmarking Business Card Recognition ---
+Image: C:\Users\rickwu\Documents\My Code\business_card\test_card.png
+Models: ['qwen3.5:0.8b', 'qwen2.5:7b']
+Trials per model: 3
+-----------------------------------------------
+
+Testing Model: qwen3.5:0.8b
+  Trial 1... Done (7.67s, Accuracy: 100.0%)
+  Trial 2... Done (4.95s, Accuracy: 83.3%)
+  Trial 3... Done (8.40s, Accuracy: 100.0%)
+
+Testing Model: qwen2.5:7b
+  Trial 1... Done (5.88s, Accuracy: 0.0%)
+  Trial 2... Done (3.61s, Accuracy: 0.0%)
+  Trial 3... Done (3.29s, Accuracy: 0.0%)
+
+==================================================
+Model           | Avg Speed    | Avg Accuracy
+--------------------------------------------------
+qwen3.5:0.8b    |      7.01s |        94.4%
+qwen2.5:7b      |      4.26s |         0.0%
+==================================================
+
+Recommendation:
+Best performance model is qwen3.5:0.8b with 94.4% accuracy.
