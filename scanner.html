@@ -339,6 +339,21 @@
                         </div>
                     </div>
 
+                    <!-- 匯出格式：依目標聯絡人軟體選擇 vCard 版本 -->
+                    <div class="form-group">
+                        <label for="vcardVersionSelect"><i class="fa-solid fa-file-export"></i> 匯出格式</label>
+                        <select id="vcardVersionSelect" style="background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); color: white; padding: 0.7rem 1rem; border-radius: 10px; font-size: 0.95rem; font-family: 'Outfit', sans-serif;">
+                            <option value="2.1">vCard 2.1（Outlook／Windows 用）</option>
+                            <option value="3.0">vCard 3.0（Google／Apple 用）</option>
+                        </select>
+                        <ul style="margin: 0.25rem 0 0 1.2rem; font-size: 0.8rem; color: var(--text-muted); line-height: 1.6;">
+                            <li><strong>vCard 2.1</strong>：傳統版 Outlook（Windows 桌面版）、Windows 聯絡人</li>
+                            <li><strong>vCard 3.0</strong>：Google 聯絡人、Apple iCloud 聯絡人（iPhone／iPad／Mac）</li>
+                            <li>新版 Outlook、Outlook.com 不能直接匯入 .vcf，需先經 Windows 聯絡人轉成 CSV</li>
+                            <li>英文姓名與地址為主要資料；中文姓名、中文地址列為輔助資料</li>
+                        </ul>
+                    </div>
+
                     <div class="form-actions">
                         <button type="button" id="manualCropBtn" class="secondary-btn" title="重新裁切正面影像（不會重新辨識）">
                             <i class="fa-solid fa-crop"></i> 重新裁切
@@ -449,16 +464,22 @@
                 <h2>Contact Exported!</h2>
                 <p>The vCard file has been downloaded successfully.</p>
                 <div class="import-instructions">
-                    <p><strong>匯入聯絡人:</strong></p>
+                    <p><strong>匯入傳統版 Outlook（請用 vCard 2.1）:</strong></p>
                     <ol>
                         <li>開啟 Outlook → 檔案 → 開啟與匯出 → 匯入/匯出</li>
                         <li>選擇「匯入 vCard 檔案」</li>
                         <li>選擇下載的 <code>.vcf</code> 檔案</li>
                     </ol>
-                    <p style="margin-top: 0.5rem;"><strong>或匯入至 Google Contacts:</strong></p>
+                    <p style="margin-top: 0.5rem;"><strong>匯入 Google 聯絡人（請用 vCard 3.0）:</strong></p>
                     <ol>
                         <li>前往 <a href="https://contacts.google.com" target="_blank">Google Contacts</a></li>
                         <li>點擊左側「匯入」</li>
+                        <li>選擇下載的 <code>.vcf</code> 檔案</li>
+                    </ol>
+                    <p style="margin-top: 0.5rem;"><strong>匯入 Apple iCloud 聯絡人（請用 vCard 3.0）:</strong></p>
+                    <ol>
+                        <li>前往 <a href="https://www.icloud.com/contacts" target="_blank">iCloud 聯絡人</a></li>
+                        <li>點擊「＋」→「匯入聯絡人」</li>
                         <li>選擇下載的 <code>.vcf</code> 檔案</li>
                     </ol>
                 </div>

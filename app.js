@@ -1873,6 +1873,79 @@ function photoBlock21(nameAndParams, b64) {
     return lines;
 }
 
+// ─── vCard 3.0（RFC 2426）文字值跳脫：\ ; , 換行 ───
+//     Google 聯絡人、Apple iCloud 聯絡人用 3.0；整檔直接 UTF-8，不用 QP
+function escape30(value) {
+    if (!value) return '';
+    return String(value)
+        .replace(/\\/g, '\\\\')
+        .replace(/;/g, '\\;')
+        .replace(/,/g, '\\,')
+        .replace(/\r?\n/g, '\\n');
+}
+
+// ─── 產生 3.0 屬性行（值須已跳脫），超過 75 位元組依 RFC 2426 折行 ───
+function vProp30(nameAndParams, value) {
+    return foldLine(`${nameAndParams}:${value}`);
+}
+
+// ─── 照片：vCard 3.0 用 ENCODING=b，整行交給 foldLine 折行 ───
+function photoLine30(b64) {
+    return foldLine(`PHOTO;ENCODING=b;TYPE=JPEG:${b64}`);
+}
+
+
+// ─── vCard 2.1（傳統版 Outlook／Windows 聯絡人）───
+//     主要地址 TYPE=WORK,PREF → Outlook「商務地址」並設為郵寄地址；
+//     輔助地址 TYPE=POSTAL → Outlook「其他地址」（MS-OXVCARD ADR 對應表）
+function buildVCard21(c) {
+    const L = ['BEGIN:VCARD', 'VERSION:2.1'];
+    L.push(vProp21('N', `${escape21(c.familyName)};${escape21(c.givenName)};;;`));
+    L.push(vProp21('FN', c.displayName));
+    if (c.orgParts.length) L.push(vProp21('ORG', c.orgParts.map(escape21).join(';')));
+    if (c.title) L.push(vProp21('TITLE', c.title));
+    if (c.mobile) L.push(vProp21('TEL;TYPE=CELL,VOICE', c.mobile));
+    if (c.workPhone) L.push(vProp21('TEL;TYPE=WORK,VOICE', c.workPhone));
+    if (c.email) L.push(vProp21('EMAIL;TYPE=INTERNET,WORK', c.email));
+    if (c.website) L.push(vProp21('URL;TYPE=WORK', c.website));
+    if (c.primaryAddr) L.push(vProp21('ADR;TYPE=WORK,PREF', `;;${escape21(c.primaryAddr)};;;${escape21(c.zip)};`));
+    if (c.secondaryAddr) L.push(vProp21('ADR;TYPE=POSTAL', `;;${escape21(c.secondaryAddr)};;;${escape21(c.zip)};`));
+    if (c.note) L.push(vProp21('NOTE', c.note));
+    if (c.categories) L.push(vProp21('CATEGORIES', c.categories));
+    if (c.photoB64) L.push(...photoBlock21('PHOTO;ENCODING=BASE64;TYPE=JPEG', c.photoB64));
+    // 背面照：第二個 PHOTO 加 X-ABLABEL 參數（vcf_to_win.py 同款寫法）
+    if (c.backB64) L.push(...photoBlock21('PHOTO;ENCODING=BASE64;TYPE=JPEG;X-ABLABEL=Back', c.backB64));
+    L.push('END:VCARD');
+    return L;
+}
+
+// ─── vCard 3.0（Google 聯絡人／Apple iCloud 聯絡人）───
+//     輔助地址用 item1. 群組 + X-ABLabel 自訂標籤（Google/Apple 匯出同款寫法）
+//     3.0 只放一張照片（正面），避免匯入端誤判
+function buildVCard30(c) {
+    const L = ['BEGIN:VCARD', 'VERSION:3.0'];
+    L.push(vProp30('N', `${escape30(c.familyName)};${escape30(c.givenName)};;;`));
+    L.push(vProp30('FN', escape30(c.displayName)));
+    if (c.orgParts.length) L.push(vProp30('ORG', c.orgParts.map(escape30).join(';')));
+    if (c.title) L.push(vProp30('TITLE', escape30(c.title)));
+    if (c.mobile) L.push(vProp30('TEL;TYPE=CELL,VOICE', escape30(c.mobile)));
+    if (c.workPhone) L.push(vProp30('TEL;TYPE=WORK,VOICE', escape30(c.workPhone)));
+    if (c.email) L.push(vProp30('EMAIL;TYPE=INTERNET,WORK', escape30(c.email)));
+    if (c.website) L.push(vProp30('URL;TYPE=WORK', c.website));
+    if (c.primaryAddr) L.push(vProp30('ADR;TYPE=WORK,PREF', `;;${escape30(c.primaryAddr)};;;${escape30(c.zip)};`));
+    if (c.secondaryAddr) {
+        L.push(vProp30('item1.ADR', `;;${escape30(c.secondaryAddr)};;;${escape30(c.zip)};`));
+        L.push(vProp30('item1.X-ABLabel', escape30(c.secondaryLabel)));
+    }
+    if (c.note) L.push(vProp30('NOTE', escape30(c.note)));
+    if (c.categories) {
+        L.push(vProp30('CATEGORIES', c.categories.split(/[,，]/).map(s => escape30(s.trim())).filter(Boolean).join(',')));
+    }
+    if (c.photoB64) L.push(photoLine30(c.photoB64));
+    L.push('END:VCARD');
+    return L;
+}
+
 
 // ═══════════════════════════════════════════════════════
 //  Generate & Download vCard (.vcf)
@@ -1897,69 +1970,53 @@ async function exportVCF() {
     const note = noteField.value.trim();
     const categories = categoriesField.value.trim();
 
-    // Build composite name for N and FN
-    // Prefer Chinese name; fall back to English
-    const familyName = familyNameCn || familyNameEn;
-    const givenName = givenNameCn || givenNameEn;
+    // 姓名：英文為主要資料，沒有英文才用中文；兩者都有時中文列為輔助資料
     const fullNameCn = familyNameCn + givenNameCn;
     const fullNameEn = [givenNameEn, familyNameEn].filter(Boolean).join(' ');
-    const fullName = fullNameCn || fullNameEn || familyName + givenName;
+    const hasEnName = !!(familyNameEn || givenNameEn);
+    const familyName = hasEnName ? familyNameEn : familyNameCn;
+    const givenName = hasEnName ? givenNameEn : givenNameCn;
+    const fullName = fullNameEn || fullNameCn;
 
     if (!fullName && !mobile && !workPhone && !email) {
         alert('請至少填寫姓名、電話或 Email 其中一項再匯出。');
         return;
     }
 
-    // vCard 2.1 + Quoted-Printable：repo 內 vcf_to_win.py 驗證過的
-    // Windows 聯絡人/Outlook 相容格式；Google 聯絡人同樣可匯入。
-    const lines = [];
-    lines.push('BEGIN:VCARD');
-    lines.push('VERSION:2.1');
+    // 顯示名稱保留中文於括號內，方便用中文搜尋
+    const displayName = (fullNameEn && fullNameCn) ? `${fullNameEn} (${fullNameCn})` : fullName;
 
-    // N：姓;名;中間名;稱謂;後綴（compound 欄位個別跳脫分號）
-    lines.push(vProp21('N', `${escape21(familyName)};${escape21(givenName)};;;`));
+    // 地址：英文為主要地址；兩者都有時中文為輔助地址
+    const primaryAddr = addrEn || addrCn;
+    const secondaryAddr = (addrEn && addrCn) ? addrCn : '';
 
-    // FN: Full formatted name — combine both CN and EN if available
-    let displayName = fullNameCn;
-    if (fullNameEn) {
-        displayName = displayName ? `${displayName} (${fullNameEn})` : fullNameEn;
-    }
-    lines.push(vProp21('FN', displayName));
+    // NOTE：輔助資料（中文姓名、中文地址）+ 統編 + 備註
+    const noteLines = [];
+    if (hasEnName && fullNameCn) noteLines.push(`中文姓名: ${fullNameCn}`);
+    if (secondaryAddr) noteLines.push(`中文地址: ${secondaryAddr}`);
+    if (taxIdVal) noteLines.push(`統編: ${taxIdVal}`);
+    if (note) noteLines.push(note);
 
-    // ORG：公司;部門
-    if (company || department) {
-        lines.push(vProp21('ORG',
-            [company, department].filter(Boolean).map(escape21).join(';')));
-    }
+    // 匯出格式：2.1（Outlook）或 3.0（Google／Apple）
+    const versionSelect = document.getElementById('vcardVersionSelect');
+    const version = (versionSelect && versionSelect.value === '3.0') ? '3.0' : '2.1';
 
-    if (titleVal) lines.push(vProp21('TITLE', titleVal));
-    if (mobile) lines.push(vProp21('TEL;TYPE=CELL,VOICE', mobile));
-    if (workPhone) {
+    const contact = {
+        familyName, givenName, displayName,
+        orgParts: [company, department].filter(Boolean),
+        title: titleVal,
+        mobile,
         // Outlook 可辨識「號碼 x分機」的寫法
-        const fullWorkPhone = ext ? `${workPhone} x${ext}` : workPhone;
-        lines.push(vProp21('TEL;TYPE=WORK,VOICE', fullWorkPhone));
-    }
-    if (email) lines.push(vProp21('EMAIL;TYPE=INTERNET,WORK', email));
-    if (website) lines.push(vProp21('URL;TYPE=WORK', website));
+        workPhone: workPhone ? (ext ? `${workPhone} x${ext}` : workPhone) : '',
+        email, website,
+        primaryAddr, secondaryAddr, secondaryLabel: '中文地址',
+        zip: zipShared,
+        note: noteLines.join('\n'),
+        categories,
+        photoB64: null, backB64: null,
+    };
 
-    // ADR：;;街道;市;州;郵遞區號;國家
-    if (addrCn) {
-        lines.push(vProp21('ADR;TYPE=WORK', `;;${escape21(addrCn)};;;${escape21(zipShared)};`));
-    }
-    if (addrEn) {
-        lines.push(vProp21('ADR;TYPE=WORK', `;;${escape21(addrEn)};;;${escape21(zipShared)};`));
-    }
-
-    // NOTE：統編 + 備註（換行由 QP 編成 =0A，不需 3.0 的 \n 跳脫）
-    let noteContent = note;
-    if (taxIdVal) {
-        noteContent = noteContent ? `統編: ${taxIdVal}\n${noteContent}` : `統編: ${taxIdVal}`;
-    }
-    if (noteContent) lines.push(vProp21('NOTE', noteContent));
-
-    if (categories) lines.push(vProp21('CATEGORIES', categories));
-
-    // ─── 影像：主相片優先用透視校正後的名片圖，以 2.1 BASE64 區塊嵌入 ───
+    // ─── 影像：主相片優先用透視校正後的名片圖 ───
     let photoB64 = null;
     if (window.cardLogoBase64) {
         photoB64 = window.cardLogoBase64;               // 後端已壓到 <100KB
@@ -1971,25 +2028,22 @@ async function exportVCF() {
             console.warn('無法縮放正面影像:', e);
         }
     }
-    if (photoB64) {
-        lines.push(...photoBlock21('PHOTO;ENCODING=BASE64;TYPE=JPEG', photoB64));
-    }
+    contact.photoB64 = photoB64;
 
-    // 背面照：第二個 PHOTO 加 X-ABLABEL 參數（vcf_to_win.py 同款寫法）
-    if (backPhotoDataUrl) {
+    // 背面照只放進 2.1（3.0 只保留一張照片）
+    if (version === '2.1' && backPhotoDataUrl) {
         try {
             const resizedBack = await resizeCardImage(backPhotoDataUrl, 640, 0.8);
-            const backB64 = resizedBack.split(',')[1];
-            lines.push(...photoBlock21('PHOTO;ENCODING=BASE64;TYPE=JPEG;X-ABLABEL=Back', backB64));
+            contact.backB64 = resizedBack.split(',')[1];
         } catch (e) {
             console.warn('無法縮放背面影像:', e);
         }
     }
 
-    lines.push('END:VCARD');
+    const lines = version === '3.0' ? buildVCard30(contact) : buildVCard21(contact);
 
-    // 整檔純 ASCII（中文都在 QP 的 =XX 裡），任何字碼頁都不會誤判，
-    // 因此不需要 BOM。結尾補一組 CRLF。
+    // 2.1：整檔純 ASCII（中文在 QP 的 =XX 裡）；3.0：直接 UTF-8。
+    // 兩者都不加 BOM，結尾補一組 CRLF。
     const vcfString = lines.join('\r\n') + '\r\n';
 
     const blob = new Blob([vcfString], { type: 'text/vcard;charset=utf-8' });
@@ -1997,7 +2051,8 @@ async function exportVCF() {
 
     const link = document.createElement('a');
     link.href = url;
-    const filename = fullName ? `${fullName.replace(/\s+/g, '_')}_contact.vcf` : 'contact.vcf';
+    const suffix = version === '3.0' ? 'v30' : 'v21';
+    const filename = fullName ? `${fullName.replace(/\s+/g, '_')}_contact_${suffix}.vcf` : `contact_${suffix}.vcf`;
     link.setAttribute('download', filename);
 
     document.body.appendChild(link);
