@@ -12,6 +12,14 @@
     <!-- Custom CSS -->
     <link rel="stylesheet" href="style.css">
     <!-- OCR powered by Docker Model Runner (OpenAI-compatible API) -->
+    <!-- 輸入框提示字（e.g. …）改為藍色；只套用現行版，style.css 與 beta 共用故不改 -->
+    <style>
+        .form-group input::placeholder,
+        .form-group textarea::placeholder {
+            color: #3b82f6;
+            opacity: 1;
+        }
+    </style>
 </head>
 
 <body>
